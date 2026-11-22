@@ -101,7 +101,7 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeButton(key, 10f, 42)
+            val button = makeButton(key, 15f, 52)
 
             if (key in listOf("CTRL", "SHIFT", "ALT")) {
                 modifierButtons[key] = button
@@ -111,8 +111,8 @@ class ControlKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 42, 1f).apply {
-                    setMargins(2, 2, 2, 2)
+                LinearLayout.LayoutParams(0, 52, 1f).apply {
+                    setMargins(4, 3, 4, 3)
                 }
             )
         }
@@ -134,19 +134,19 @@ class ControlKeyboardService : InputMethodService() {
         if (centered) addSpacer(row, 0.5f)
 
         if (shiftAndBack) {
-            val shift = makeButton("SHIFT", 10f, 48)
+            val shift = makeButton("SHIFT", 15f, 72)
             modifierButtons["SHIFT"] = shift
             shift.setOnClickListener { handleKey("SHIFT") }
-            row.addView(shift, LinearLayout.LayoutParams(0, 48, 1.5f).apply {
-                setMargins(2, 2, 2, 2)
+            row.addView(shift, LinearLayout.LayoutParams(0, 72, 1.5f).apply {
+                setMargins(4, 3, 4, 3)
             })
         }
 
         keys.forEach { key ->
             val button = makeButton(
                 if (arabicOn) arabic[key] ?: key else key,
-                15f,
-                48
+                30f,
+                72
             )
 
             letterButtons[key] = button
@@ -154,8 +154,8 @@ class ControlKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 48, 1f).apply {
-                    setMargins(2, 2, 2, 2)
+                LinearLayout.LayoutParams(0, 72, 1f).apply {
+                    setMargins(4, 3, 4, 3)
                 }
             )
         }
@@ -163,10 +163,10 @@ class ControlKeyboardService : InputMethodService() {
         if (centered) addSpacer(row, 0.5f)
 
         if (shiftAndBack) {
-            val back = makeButton("⌫", 17f, 48)
+            val back = makeButton("⌫", 22f, 72)
             back.setOnClickListener { handleKey("BACK") }
-            row.addView(back, LinearLayout.LayoutParams(0, 48, 1.5f).apply {
-                setMargins(2, 2, 2, 2)
+            row.addView(back, LinearLayout.LayoutParams(0, 72, 1.5f).apply {
+                setMargins(4, 3, 4, 3)
             })
         }
 
@@ -179,13 +179,13 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeButton(key, 17f, 48)
+            val button = makeButton(key, 22f, 60)
             button.setOnClickListener { handleKey(key) }
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 48, 1f).apply {
-                    setMargins(2, 2, 2, 2)
+                LinearLayout.LayoutParams(0, 60, 1f).apply {
+                    setMargins(4, 3, 4, 3)
                 }
             )
         }
@@ -336,10 +336,10 @@ class ControlKeyboardService : InputMethodService() {
             }
 
             "LINE" -> selectCurrentLine(ic)
-            "ALL" -> ic.performContextMenuAction(android.R.id.selectAll)
-            "COPY" -> ic.performContextMenuAction(android.R.id.copy)
-            "CUT" -> ic.performContextMenuAction(android.R.id.cut)
-            "PASTE" -> ic.performContextMenuAction(android.R.id.paste)
+            "ALL" -> sendShortcut(ic, KeyEvent.KEYCODE_A)
+            "COPY" -> sendShortcut(ic, KeyEvent.KEYCODE_C)
+            "CUT" -> sendShortcut(ic, KeyEvent.KEYCODE_X)
+            "PASTE" -> sendShortcut(ic, KeyEvent.KEYCODE_V)
 
             "," -> ic.commitText(",", 1)
             "." -> ic.commitText(".", 1)
@@ -373,6 +373,11 @@ class ControlKeyboardService : InputMethodService() {
             extracted.startOffset + start,
             extracted.startOffset + end
         )
+    }
+
+    private fun sendShortcut(ic: InputConnection, code: Int) {
+        ctrlOn = true
+        sendKey(ic, code)
     }
 
     private fun sendKey(ic: InputConnection, code: Int) {
