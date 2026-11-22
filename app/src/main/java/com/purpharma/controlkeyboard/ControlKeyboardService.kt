@@ -102,7 +102,7 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeButton(key, 19f, 64)
+            val button = makeButton(key, 14f, 44)
 
             if (key in listOf("CTRL", "SHIFT", "ALT")) {
                 modifierButtons[key] = button
@@ -113,7 +113,7 @@ class ControlKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 64, 1f).apply {
+                LinearLayout.LayoutParams(0, 44, 1f).apply {
                     setMargins(2, 3, 2, 3)
                 }
             )
@@ -136,10 +136,10 @@ class ControlKeyboardService : InputMethodService() {
         if (centered) addSpacer(row, 0.5f)
 
         if (shiftAndBack) {
-            val shift = makeButton("SHIFT", 19f, 84)
+            val shift = makeButton("SHIFT", 14f, 54)
             modifierButtons["SHIFT"] = shift
             shift.setOnClickListener { handleKey("SHIFT") }
-            row.addView(shift, LinearLayout.LayoutParams(0, 84, 1.5f).apply {
+            row.addView(shift, LinearLayout.LayoutParams(0, 54, 1.5f).apply {
                 setMargins(1, 3, 1, 3)
             })
         }
@@ -147,8 +147,8 @@ class ControlKeyboardService : InputMethodService() {
         keys.forEach { key ->
             val button = makeButton(
                 if (arabicOn) arabic[key] ?: key else key,
-                36f,
-                84
+                22f,
+                54
             )
 
             letterButtons[key] = button
@@ -156,7 +156,7 @@ class ControlKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 84, 1f).apply {
+                LinearLayout.LayoutParams(0, 54, 1f).apply {
                     setMargins(1, 3, 1, 3)
                 }
             )
@@ -165,9 +165,9 @@ class ControlKeyboardService : InputMethodService() {
         if (centered) addSpacer(row, 0.5f)
 
         if (shiftAndBack) {
-            val back = makeButton("⌫", 26f, 84)
+            val back = makeButton("⌫", 22f, 54)
             back.setOnClickListener { handleKey("BACK") }
-            row.addView(back, LinearLayout.LayoutParams(0, 72, 1.5f).apply {
+            row.addView(back, LinearLayout.LayoutParams(0, 54, 1.5f).apply {
                 setMargins(1, 3, 1, 3)
             })
         }
@@ -181,12 +181,12 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeButton(key, 26f, 68)
+            val button = makeButton(key, 20f, 48)
             button.setOnClickListener { handleKey(key) }
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 68, 1f).apply {
+                LinearLayout.LayoutParams(0, 48, 1f).apply {
                     setMargins(4, 3, 4, 3)
                 }
             )
@@ -255,11 +255,14 @@ class ControlKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
 
         if (ctrlOn) {
-            if (key == "A") {
-                selectAllText(ic)
-            } else {
-                sendKey(ic, letterKeyCode(key))
+            when (key) {
+                "A" -> performShortcutAction(ic, android.R.id.selectAll)
+                "C" -> performShortcutAction(ic, android.R.id.copy)
+                "X" -> performShortcutAction(ic, android.R.id.cut)
+                "V" -> performShortcutAction(ic, android.R.id.paste)
+                else -> sendKey(ic, letterKeyCode(key))
             }
+            ctrlOn = false
             updateKeyboard()
             return
         }
@@ -340,10 +343,10 @@ class ControlKeyboardService : InputMethodService() {
             }
 
             "LINE" -> selectCurrentLine(ic)
-            "ALL" -> selectAllText(ic)
-            "COPY" -> sendShortcut(ic, KeyEvent.KEYCODE_C)
-            "CUT" -> sendShortcut(ic, KeyEvent.KEYCODE_X)
-            "PASTE" -> sendShortcut(ic, KeyEvent.KEYCODE_V)
+            "ALL" -> performShortcutAction(ic, android.R.id.selectAll)
+            "COPY" -> performShortcutAction(ic, android.R.id.copy)
+            "CUT" -> performShortcutAction(ic, android.R.id.cut)
+            "PASTE" -> performShortcutAction(ic, android.R.id.paste)
 
             "," -> ic.commitText(",", 1)
             "." -> ic.commitText(".", 1)
@@ -357,25 +360,9 @@ class ControlKeyboardService : InputMethodService() {
         updateKeyboard()
     }
 
-    private fun selectAllText(ic: InputConnection) {
-        val extracted = ic.getExtractedText(ExtractedTextRequest(), 0)
-        val text = extracted?.text
-        if (extracted != null && text != null &&
-            extracted.partialStartOffset == -1 &&
-            extracted.partialEndOffset == -1
-        ) {
-            val start = extracted.startOffset
-            val end = start + text.length
-            if (end > start) {
-                ic.setSelection(start, end)
-                ctrlOn = false
-                updateKeyboard()
-                return
-            }
-        }
-
-        ic.performContextMenuAction(android.R.id.selectAll)
-        sendShortcut(ic, KeyEvent.KEYCODE_A)
+    private fun performShortcutAction(ic: InputConnection, action: Int) {
+        // Use Android editor actions because many text fields do not forward Ctrl key events.
+        ic.performContextMenuAction(action)
     }
 
     private fun selectCurrentLine(ic: InputConnection) {
@@ -398,11 +385,6 @@ class ControlKeyboardService : InputMethodService() {
             extracted.startOffset + start,
             extracted.startOffset + end
         )
-    }
-
-    private fun sendShortcut(ic: InputConnection, code: Int) {
-        ctrlOn = true
-        sendKey(ic, code)
     }
 
     private fun sendKey(ic: InputConnection, code: Int) {
