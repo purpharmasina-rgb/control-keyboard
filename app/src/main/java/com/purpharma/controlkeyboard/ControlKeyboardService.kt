@@ -252,10 +252,11 @@ class ControlKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
 
         if (ctrlOn) {
-            // Send a real Ctrl+<key> event to the target editor.
-            // Context-menu actions are inconsistent across code editors and can
-            // select only the current line or fail to affect the full document.
-            sendKey(ic, letterKeyCode(key))
+            if (key == "A") {
+                selectAllText(ic)
+            } else {
+                sendKey(ic, letterKeyCode(key))
+            }
             updateKeyboard()
             return
         }
@@ -336,7 +337,7 @@ class ControlKeyboardService : InputMethodService() {
             }
 
             "LINE" -> selectCurrentLine(ic)
-            "ALL" -> sendShortcut(ic, KeyEvent.KEYCODE_A)
+            "ALL" -> selectAllText(ic)
             "COPY" -> sendShortcut(ic, KeyEvent.KEYCODE_C)
             "CUT" -> sendShortcut(ic, KeyEvent.KEYCODE_X)
             "PASTE" -> sendShortcut(ic, KeyEvent.KEYCODE_V)
@@ -351,6 +352,27 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         updateKeyboard()
+    }
+
+    private fun selectAllText(ic: InputConnection) {
+        val extracted = ic.getExtractedText(ExtractedTextRequest(), 0)
+        val text = extracted?.text
+        if (extracted != null && text != null &&
+            extracted.partialStartOffset == -1 &&
+            extracted.partialEndOffset == -1
+        ) {
+            val start = extracted.startOffset
+            val end = start + text.length
+            if (end > start) {
+                ic.setSelection(start, end)
+                ctrlOn = false
+                updateKeyboard()
+                return
+            }
+        }
+
+        ic.performContextMenuAction(android.R.id.selectAll)
+        sendShortcut(ic, KeyEvent.KEYCODE_A)
     }
 
     private fun selectCurrentLine(ic: InputConnection) {
