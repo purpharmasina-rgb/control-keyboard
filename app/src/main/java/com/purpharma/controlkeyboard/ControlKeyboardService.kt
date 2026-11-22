@@ -46,7 +46,7 @@ class ControlKeyboardService : InputMethodService() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(3, 4, 3, 4)
+            setPadding(dp(3), dp(4), dp(3), dp(4))
             setBackgroundColor(Color.rgb(30, 30, 30))
         }
 
@@ -102,7 +102,7 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeButton(key, 14f, 44)
+            val button = makeButton(key, 12f, 38)
 
             if (key in listOf("CTRL", "SHIFT", "ALT")) {
                 modifierButtons[key] = button
@@ -113,8 +113,8 @@ class ControlKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 44, 1f).apply {
-                    setMargins(2, 3, 2, 3)
+                LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
                 }
             )
         }
@@ -136,19 +136,19 @@ class ControlKeyboardService : InputMethodService() {
         if (centered) addSpacer(row, 0.5f)
 
         if (shiftAndBack) {
-            val shift = makeButton("SHIFT", 14f, 54)
+            val shift = makeButton("SHIFT", 12f, 48)
             modifierButtons["SHIFT"] = shift
             shift.setOnClickListener { handleKey("SHIFT") }
-            row.addView(shift, LinearLayout.LayoutParams(0, 54, 1.5f).apply {
-                setMargins(1, 3, 1, 3)
+            row.addView(shift, LinearLayout.LayoutParams(0, dp(48), 1.5f).apply {
+                setMargins(dp(1), dp(2), dp(1), dp(2))
             })
         }
 
         keys.forEach { key ->
             val button = makeButton(
                 if (arabicOn) arabic[key] ?: key else key,
-                22f,
-                54
+                19f,
+                48
             )
 
             letterButtons[key] = button
@@ -156,8 +156,8 @@ class ControlKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 54, 1f).apply {
-                    setMargins(1, 3, 1, 3)
+                LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                    setMargins(dp(1), dp(2), dp(1), dp(2))
                 }
             )
         }
@@ -165,10 +165,10 @@ class ControlKeyboardService : InputMethodService() {
         if (centered) addSpacer(row, 0.5f)
 
         if (shiftAndBack) {
-            val back = makeButton("⌫", 22f, 54)
+            val back = makeButton("⌫", 19f, 48)
             back.setOnClickListener { handleKey("BACK") }
-            row.addView(back, LinearLayout.LayoutParams(0, 54, 1.5f).apply {
-                setMargins(1, 3, 1, 3)
+            row.addView(back, LinearLayout.LayoutParams(0, dp(48), 1.5f).apply {
+                setMargins(dp(1), dp(2), dp(1), dp(2))
             })
         }
 
@@ -181,13 +181,13 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeButton(key, 20f, 48)
+            val button = makeButton(key, 18f, 44)
             button.setOnClickListener { handleKey(key) }
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 48, 1f).apply {
-                    setMargins(4, 3, 4, 3)
+                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
                 }
             )
         }
@@ -213,7 +213,10 @@ class ControlKeyboardService : InputMethodService() {
             isAllCaps = false
             minWidth = 0
             minHeight = 0
-            setPadding(1, 1, 1, 1)
+            setPadding(dp(2), dp(1), dp(2), dp(1))
+            gravity = Gravity.CENTER
+            isSingleLine = true
+            includeFontPadding = false
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.rgb(75, 75, 75))
             layoutParams = LinearLayout.LayoutParams(
@@ -255,7 +258,7 @@ class ControlKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
 
         if (ctrlOn) {
-            sendKey(ic, letterKeyCode(key))
+            sendCtrlShortcut(ic, letterKeyCode(key))
             ctrlOn = false
             updateKeyboard()
             return
@@ -337,10 +340,10 @@ class ControlKeyboardService : InputMethodService() {
             }
 
             "LINE" -> selectCurrentLine(ic)
-            "ALL" -> sendShortcut(ic, KeyEvent.KEYCODE_A)
-            "COPY" -> sendShortcut(ic, KeyEvent.KEYCODE_C)
-            "CUT" -> sendShortcut(ic, KeyEvent.KEYCODE_X)
-            "PASTE" -> sendShortcut(ic, KeyEvent.KEYCODE_V)
+            "ALL" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_A)
+            "COPY" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_C)
+            "CUT" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_X)
+            "PASTE" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_V)
 
             "," -> ic.commitText(",", 1)
             "." -> ic.commitText(".", 1)
@@ -354,9 +357,27 @@ class ControlKeyboardService : InputMethodService() {
         updateKeyboard()
     }
 
-    private fun sendShortcut(ic: InputConnection, code: Int) {
-        ctrlOn = true
-        sendKey(ic, code)
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun sendCtrlShortcut(ic: InputConnection, code: Int) {
+        if (code == 0) return
+        val downTime = SystemClock.uptimeMillis()
+        val flags = KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
+        fun dispatch(action: Int, keyCode: Int, metaState: Int) {
+            ic.sendKeyEvent(
+                KeyEvent(
+                    downTime, SystemClock.uptimeMillis(), action, keyCode, 0,
+                    metaState, KeyEvent.KEYCODE_UNKNOWN, 0, flags
+                )
+            )
+        }
+        val ctrlMeta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
+        dispatch(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, ctrlMeta)
+        dispatch(KeyEvent.ACTION_DOWN, code, ctrlMeta)
+        dispatch(KeyEvent.ACTION_UP, code, ctrlMeta)
+        dispatch(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0)
+        ctrlOn = false
     }
 
     private fun selectCurrentLine(ic: InputConnection) {
@@ -391,22 +412,15 @@ class ControlKeyboardService : InputMethodService() {
 
         val downTime = SystemClock.uptimeMillis()
 
+        val flags = KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
         ic.sendKeyEvent(
-            KeyEvent(
-                downTime, downTime,
-                KeyEvent.ACTION_DOWN,
-                code, 0, meta
-            )
+            KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, code, 0, meta,
+                KeyEvent.KEYCODE_UNKNOWN, 0, flags)
         )
-
         val upTime = SystemClock.uptimeMillis()
-
         ic.sendKeyEvent(
-            KeyEvent(
-                downTime, upTime,
-                KeyEvent.ACTION_UP,
-                code, 0, meta
-            )
+            KeyEvent(downTime, upTime, KeyEvent.ACTION_UP, code, 0, meta,
+                KeyEvent.KEYCODE_UNKNOWN, 0, flags)
         )
 
         shiftOn = false
