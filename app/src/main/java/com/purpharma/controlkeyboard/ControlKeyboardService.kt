@@ -252,24 +252,10 @@ class ControlKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
 
         if (ctrlOn) {
-            val action = when (key) {
-                "A" -> android.R.id.selectAll
-                "C" -> android.R.id.copy
-                "X" -> android.R.id.cut
-                "V" -> android.R.id.paste
-                else -> 0
-            }
-
-            if (action != 0) {
-                val done = ic.performContextMenuAction(action)
-                if (!done) sendKey(ic, letterKeyCode(key))
-            } else {
-                sendKey(ic, letterKeyCode(key))
-            }
-
-            ctrlOn = false
-            shiftOn = false
-            altOn = false
+            // Send a real Ctrl+<key> event to the target editor.
+            // Context-menu actions are inconsistent across code editors and can
+            // select only the current line or fail to affect the full document.
+            sendKey(ic, letterKeyCode(key))
             updateKeyboard()
             return
         }
