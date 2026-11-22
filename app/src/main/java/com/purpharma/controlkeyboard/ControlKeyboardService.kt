@@ -255,13 +255,7 @@ class ControlKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
 
         if (ctrlOn) {
-            when (key) {
-                "A" -> performShortcutAction(ic, android.R.id.selectAll)
-                "C" -> performShortcutAction(ic, android.R.id.copy)
-                "X" -> performShortcutAction(ic, android.R.id.cut)
-                "V" -> performShortcutAction(ic, android.R.id.paste)
-                else -> sendKey(ic, letterKeyCode(key))
-            }
+            sendKey(ic, letterKeyCode(key))
             ctrlOn = false
             updateKeyboard()
             return
@@ -343,10 +337,10 @@ class ControlKeyboardService : InputMethodService() {
             }
 
             "LINE" -> selectCurrentLine(ic)
-            "ALL" -> performShortcutAction(ic, android.R.id.selectAll)
-            "COPY" -> performShortcutAction(ic, android.R.id.copy)
-            "CUT" -> performShortcutAction(ic, android.R.id.cut)
-            "PASTE" -> performShortcutAction(ic, android.R.id.paste)
+            "ALL" -> sendShortcut(ic, KeyEvent.KEYCODE_A)
+            "COPY" -> sendShortcut(ic, KeyEvent.KEYCODE_C)
+            "CUT" -> sendShortcut(ic, KeyEvent.KEYCODE_X)
+            "PASTE" -> sendShortcut(ic, KeyEvent.KEYCODE_V)
 
             "," -> ic.commitText(",", 1)
             "." -> ic.commitText(".", 1)
@@ -360,9 +354,9 @@ class ControlKeyboardService : InputMethodService() {
         updateKeyboard()
     }
 
-    private fun performShortcutAction(ic: InputConnection, action: Int) {
-        // Use Android editor actions because many text fields do not forward Ctrl key events.
-        ic.performContextMenuAction(action)
+    private fun sendShortcut(ic: InputConnection, code: Int) {
+        ctrlOn = true
+        sendKey(ic, code)
     }
 
     private fun selectCurrentLine(ic: InputConnection) {
