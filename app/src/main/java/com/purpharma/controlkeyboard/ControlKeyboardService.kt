@@ -140,7 +140,7 @@ class ControlKeyboardService : InputMethodService() {
             modifierButtons["SHIFT"] = shift
             shift.setOnClickListener { handleKey("SHIFT") }
             row.addView(shift, LinearLayout.LayoutParams(0, 84, 1.5f).apply {
-                setMargins(4, 3, 4, 3)
+                setMargins(1, 3, 1, 3)
             })
         }
 
@@ -157,7 +157,7 @@ class ControlKeyboardService : InputMethodService() {
             row.addView(
                 button,
                 LinearLayout.LayoutParams(0, 84, 1f).apply {
-                    setMargins(4, 3, 4, 3)
+                    setMargins(1, 3, 1, 3)
                 }
             )
         }
@@ -168,7 +168,7 @@ class ControlKeyboardService : InputMethodService() {
             val back = makeButton("⌫", 26f, 84)
             back.setOnClickListener { handleKey("BACK") }
             row.addView(back, LinearLayout.LayoutParams(0, 72, 1.5f).apply {
-                setMargins(4, 3, 4, 3)
+                setMargins(1, 3, 1, 3)
             })
         }
 
