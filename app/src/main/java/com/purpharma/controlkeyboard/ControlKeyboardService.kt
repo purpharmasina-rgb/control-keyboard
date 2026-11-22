@@ -101,7 +101,7 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeButton(key, 15f, 52)
+            val button = makeButton(key, 19f, 64)
 
             if (key in listOf("CTRL", "SHIFT", "ALT")) {
                 modifierButtons[key] = button
@@ -111,7 +111,7 @@ class ControlKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 52, 1f).apply {
+                LinearLayout.LayoutParams(0, 64, 1f).apply {
                     setMargins(4, 3, 4, 3)
                 }
             )
@@ -134,10 +134,10 @@ class ControlKeyboardService : InputMethodService() {
         if (centered) addSpacer(row, 0.5f)
 
         if (shiftAndBack) {
-            val shift = makeButton("SHIFT", 15f, 72)
+            val shift = makeButton("SHIFT", 19f, 84)
             modifierButtons["SHIFT"] = shift
             shift.setOnClickListener { handleKey("SHIFT") }
-            row.addView(shift, LinearLayout.LayoutParams(0, 72, 1.5f).apply {
+            row.addView(shift, LinearLayout.LayoutParams(0, 84, 1.5f).apply {
                 setMargins(4, 3, 4, 3)
             })
         }
@@ -145,8 +145,8 @@ class ControlKeyboardService : InputMethodService() {
         keys.forEach { key ->
             val button = makeButton(
                 if (arabicOn) arabic[key] ?: key else key,
-                30f,
-                72
+                36f,
+                84
             )
 
             letterButtons[key] = button
@@ -154,7 +154,7 @@ class ControlKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 72, 1f).apply {
+                LinearLayout.LayoutParams(0, 84, 1f).apply {
                     setMargins(4, 3, 4, 3)
                 }
             )
@@ -163,7 +163,7 @@ class ControlKeyboardService : InputMethodService() {
         if (centered) addSpacer(row, 0.5f)
 
         if (shiftAndBack) {
-            val back = makeButton("⌫", 22f, 72)
+            val back = makeButton("⌫", 26f, 84)
             back.setOnClickListener { handleKey("BACK") }
             row.addView(back, LinearLayout.LayoutParams(0, 72, 1.5f).apply {
                 setMargins(4, 3, 4, 3)
@@ -179,12 +179,12 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeButton(key, 22f, 60)
+            val button = makeButton(key, 26f, 68)
             button.setOnClickListener { handleKey(key) }
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, 60, 1f).apply {
+                LinearLayout.LayoutParams(0, 68, 1f).apply {
                     setMargins(4, 3, 4, 3)
                 }
             )
