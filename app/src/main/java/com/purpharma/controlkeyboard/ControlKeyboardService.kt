@@ -340,7 +340,7 @@ class ControlKeyboardService : InputMethodService() {
             }
 
             "LINE" -> selectCurrentLine(ic)
-            "ALL" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_A)
+            "ALL" -> selectAllWithFallback(ic)
             "COPY" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_C)
             "CUT" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_X)
             "PASTE" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_V)
@@ -355,6 +355,17 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         updateKeyboard()
+    }
+
+    private fun selectAllWithFallback(ic: InputConnection) {
+        // Try the editor's native Select All action before synthesizing Ctrl+A.
+        val handled = ic.performContextMenuAction(android.R.id.selectAll)
+        if (!handled) {
+            sendCtrlShortcut(ic, KeyEvent.KEYCODE_A)
+        } else {
+            ctrlOn = false
+            updateKeyboard()
+        }
     }
 
     private fun dp(value: Int): Int =
