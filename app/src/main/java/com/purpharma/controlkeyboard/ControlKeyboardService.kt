@@ -147,7 +147,7 @@ class ControlKeyboardService : InputMethodService() {
         keys.forEach { key ->
             val button = makeButton(
                 if (arabicOn) arabic[key] ?: key else key,
-                30f,
+                36f,
                 84
             )
 
