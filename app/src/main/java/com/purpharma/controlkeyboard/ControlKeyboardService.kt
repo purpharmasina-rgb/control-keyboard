@@ -23,6 +23,7 @@ class ControlKeyboardService : InputMethodService() {
 
     private val modifierButtons = mutableMapOf<String, Button>()
     private val letterButtons = mutableMapOf<String, Button>()
+    private var languageButton: Button? = null
 
     private lateinit var lettersPanel: LinearLayout
     private lateinit var numbersPanel: LinearLayout
@@ -106,13 +107,14 @@ class ControlKeyboardService : InputMethodService() {
             if (key in listOf("CTRL", "SHIFT", "ALT")) {
                 modifierButtons[key] = button
             }
+            if (key == "LANG") languageButton = button
 
             button.setOnClickListener { handleKey(key) }
 
             row.addView(
                 button,
                 LinearLayout.LayoutParams(0, 64, 1f).apply {
-                    setMargins(4, 3, 4, 3)
+                    setMargins(2, 3, 2, 3)
                 }
             )
         }
@@ -145,7 +147,7 @@ class ControlKeyboardService : InputMethodService() {
         keys.forEach { key ->
             val button = makeButton(
                 if (arabicOn) arabic[key] ?: key else key,
-                36f,
+                30f,
                 84
             )
 
@@ -238,6 +240,7 @@ class ControlKeyboardService : InputMethodService() {
         letterButtons.forEach { (key, button) ->
             button.text = if (arabicOn) arabic[key] ?: key else key
         }
+        languageButton?.text = if (arabicOn) "EN" else "عربي"
 
         if (::lettersPanel.isInitialized && ::numbersPanel.isInitialized) {
             lettersPanel.visibility =
