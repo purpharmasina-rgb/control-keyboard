@@ -6,10 +6,12 @@ import android.graphics.Color
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
+import android.view.Gravity
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.ExtractedTextRequest
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.Space
 
 class ControlKeyboardService : InputMethodService() {
 
@@ -17,6 +19,13 @@ class ControlKeyboardService : InputMethodService() {
     private var ctrlOn = false
     private var altOn = false
     private var arabicOn = false
+    private var numberPage = false
+
+    private val modifierButtons = mutableMapOf<String, Button>()
+    private val letterButtons = mutableMapOf<String, Button>()
+
+    private lateinit var lettersPanel: LinearLayout
+    private lateinit var numbersPanel: LinearLayout
 
     private val arabic = mapOf(
         "Q" to "ض", "W" to "ص", "E" to "ث",
@@ -31,97 +40,78 @@ class ControlKeyboardService : InputMethodService() {
     )
 
     override fun onCreateInputView(): View {
+        modifierButtons.clear()
+        letterButtons.clear()
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(3, 4, 3, 4)
             setBackgroundColor(Color.rgb(30, 30, 30))
         }
 
-        addRow(root, listOf("CTRL", "SHIFT", "ALT", "ESC"), 42)
-        addRow(root, listOf("HOME", "END", "DEL", "←", "→"), 42)
-        addRow(root, listOf("↑", "↓", "TAB", "LANG"), 42)
+        addControlRow(root, listOf("CTRL", "SHIFT", "ALT", "ESC"))
+        addControlRow(root, listOf("HOME", "END", "DEL", "←", "→"))
+        addControlRow(root, listOf("↑", "↓", "TAB", "LANG"))
 
-        addRow(root, listOf(
-            "LINE", "ALL", "COPY", "CUT", "PASTE"
-        ), 42)
+        addControlRow(root, listOf("LINE", "ALL", "COPY", "CUT", "PASTE"))
 
-        addRow(root, listOf(
-            "1", "2", "3", "4", "5",
-            "6", "7", "8", "9", "0"
-        ), 42)
+        lettersPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
 
-        addLetterRow(root, listOf(
-            "Q", "W", "E", "R", "T",
-            "Y", "U", "I", "O", "P"
-        ))
+        addLetterRow(
+            lettersPanel,
+            listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P")
+        )
 
-        addLetterRow(root, listOf(
-            "A", "S", "D", "F", "G",
-            "H", "J", "K", "L"
-        ))
+        addLetterRow(
+            lettersPanel,
+            listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"),
+            centered = true
+        )
 
-        addRow(root, listOf(
-            "SHIFT", "Z", "X", "C", "V",
-            "B", "N", "M", "BACK"
-        ), 46)
+        addLetterRow(
+            lettersPanel,
+            listOf("Z", "X", "C", "V", "B", "N", "M"),
+            shiftAndBack = true
+        )
 
-        addRow(root, listOf(
-            ",", "SPACE", ".", "ENTER"
-        ), 46)
+        addControlRow(lettersPanel, listOf("123", ",", "SPACE", ".", "ENTER"))
 
+        numbersPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+
+        addNumberRow(numbersPanel, listOf("1", "2", "3", "4", "5"))
+        addNumberRow(numbersPanel, listOf("6", "7", "8", "9", "0"))
+        addControlRow(numbersPanel, listOf("ABC", "-", "/", ":", "ENTER"))
+
+        root.addView(lettersPanel)
+        root.addView(numbersPanel)
+
+        updateKeyboard()
         return root
     }
 
-    private fun addRow(
-        root: LinearLayout,
-        keys: List<String>,
-        height: Int
-    ) {
+    private fun addControlRow(root: LinearLayout, keys: List<String>) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
         }
 
         keys.forEach { key ->
+            val button = makeButton(key, 10f, 42)
 
-            val active = when (key) {
-                "CTRL" -> ctrlOn
-                "SHIFT" -> shiftOn
-                "ALT" -> altOn
-                else -> false
+            if (key in listOf("CTRL", "SHIFT", "ALT")) {
+                modifierButtons[key] = button
             }
 
-            val label = when (key) {
-                "LANG" -> if (arabicOn) "عربي" else "EN"
-                "BACK" -> "⌫"
-                else -> key
-            }
-
-            val button = Button(this).apply {
-                text = label
-                textSize = if (key == "SPACE") 12f else 10f
-                isAllCaps = false
-                minWidth = 0
-                minHeight = 0
-                setPadding(1, 1, 1, 1)
-                setTextColor(Color.WHITE)
-
-                setBackgroundColor(
-                    if (active) Color.rgb(35, 105, 190)
-                    else Color.rgb(65, 65, 65)
-                )
-
-                setOnClickListener {
-                    handleKey(key)
-                }
-            }
-
-            val weight = if (key == "SPACE") 3f else 1f
+            button.setOnClickListener { handleKey(key) }
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(
-                    0, height, weight
-                ).apply {
+                LinearLayout.LayoutParams(0, 42, 1f).apply {
                     setMargins(2, 2, 2, 2)
                 }
             )
@@ -132,40 +122,69 @@ class ControlKeyboardService : InputMethodService() {
 
     private fun addLetterRow(
         root: LinearLayout,
-        keys: List<String>
+        keys: List<String>,
+        centered: Boolean = false,
+        shiftAndBack: Boolean = false
     ) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        if (centered) addSpacer(row, 0.5f)
+
+        if (shiftAndBack) {
+            val shift = makeButton("SHIFT", 10f, 48)
+            modifierButtons["SHIFT"] = shift
+            shift.setOnClickListener { handleKey("SHIFT") }
+            row.addView(shift, LinearLayout.LayoutParams(0, 48, 1.5f).apply {
+                setMargins(2, 2, 2, 2)
+            })
+        }
+
+        keys.forEach { key ->
+            val button = makeButton(
+                if (arabicOn) arabic[key] ?: key else key,
+                15f,
+                48
+            )
+
+            letterButtons[key] = button
+            button.setOnClickListener { handleLetter(key) }
+
+            row.addView(
+                button,
+                LinearLayout.LayoutParams(0, 48, 1f).apply {
+                    setMargins(2, 2, 2, 2)
+                }
+            )
+        }
+
+        if (centered) addSpacer(row, 0.5f)
+
+        if (shiftAndBack) {
+            val back = makeButton("⌫", 17f, 48)
+            back.setOnClickListener { handleKey("BACK") }
+            row.addView(back, LinearLayout.LayoutParams(0, 48, 1.5f).apply {
+                setMargins(2, 2, 2, 2)
+            })
+        }
+
+        root.addView(row)
+    }
+
+    private fun addNumberRow(root: LinearLayout, keys: List<String>) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
 
         keys.forEach { key ->
-
-            val label = if (arabicOn) {
-                arabic[key] ?: key
-            } else {
-                key
-            }
-
-            val button = Button(this).apply {
-                text = label
-                textSize = 15f
-                isAllCaps = false
-                minWidth = 0
-                minHeight = 0
-                setPadding(1, 1, 1, 1)
-                setTextColor(Color.WHITE)
-                setBackgroundColor(Color.rgb(75, 75, 75))
-
-                setOnClickListener {
-                    handleLetter(key)
-                }
-            }
+            val button = makeButton(key, 17f, 48)
+            button.setOnClickListener { handleKey(key) }
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(
-                    0, 47, 1f
-                ).apply {
+                LinearLayout.LayoutParams(0, 48, 1f).apply {
                     setMargins(2, 2, 2, 2)
                 }
             )
@@ -174,18 +193,84 @@ class ControlKeyboardService : InputMethodService() {
         root.addView(row)
     }
 
+    private fun addSpacer(row: LinearLayout, weight: Float) {
+        row.addView(
+            Space(this),
+            LinearLayout.LayoutParams(0, 1, weight)
+        )
+    }
+
+    private fun makeButton(
+        label: String,
+        size: Float,
+        height: Int
+    ): Button {
+        return Button(this).apply {
+            text = label
+            textSize = size
+            isAllCaps = false
+            minWidth = 0
+            minHeight = 0
+            setPadding(1, 1, 1, 1)
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(75, 75, 75))
+            layoutParams = LinearLayout.LayoutParams(
+                0, height, 1f
+            )
+        }
+    }
+
+    private fun updateKeyboard() {
+        modifierButtons.forEach { (key, button) ->
+            val active = when (key) {
+                "CTRL" -> ctrlOn
+                "SHIFT" -> shiftOn
+                "ALT" -> altOn
+                else -> false
+            }
+
+            button.setBackgroundColor(
+                if (active) Color.rgb(35, 105, 190)
+                else Color.rgb(75, 75, 75)
+            )
+        }
+
+        letterButtons.forEach { (key, button) ->
+            button.text = if (arabicOn) arabic[key] ?: key else key
+        }
+
+        if (::lettersPanel.isInitialized && ::numbersPanel.isInitialized) {
+            lettersPanel.visibility =
+                if (numberPage) View.GONE else View.VISIBLE
+
+            numbersPanel.visibility =
+                if (numberPage) View.VISIBLE else View.GONE
+        }
+    }
+
     private fun handleLetter(key: String) {
         val ic = currentInputConnection ?: return
 
         if (ctrlOn) {
-            val code = letterKeyCode(key)
+            val action = when (key) {
+                "A" -> android.R.id.selectAll
+                "C" -> android.R.id.copy
+                "X" -> android.R.id.cut
+                "V" -> android.R.id.paste
+                else -> 0
+            }
 
-            if (code != 0) {
-                sendKey(ic, code)
+            if (action != 0) {
+                val done = ic.performContextMenuAction(action)
+                if (!done) sendKey(ic, letterKeyCode(key))
+            } else {
+                sendKey(ic, letterKeyCode(key))
             }
 
             ctrlOn = false
-            refreshKeyboard()
+            shiftOn = false
+            altOn = false
+            updateKeyboard()
             return
         }
 
@@ -196,9 +281,8 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         ic.commitText(value, 1)
-
         shiftOn = false
-        refreshKeyboard()
+        updateKeyboard()
     }
 
     private fun letterKeyCode(key: String): Int {
@@ -243,13 +327,12 @@ class ControlKeyboardService : InputMethodService() {
 
             "LANG" -> arabicOn = !arabicOn
 
+            "123" -> numberPage = true
+            "ABC" -> numberPage = false
+
             "HOME" -> sendKey(ic, KeyEvent.KEYCODE_MOVE_HOME)
             "END" -> sendKey(ic, KeyEvent.KEYCODE_MOVE_END)
-
-            "DEL" -> sendKey(
-                ic, KeyEvent.KEYCODE_FORWARD_DEL
-            )
-
+            "DEL" -> sendKey(ic, KeyEvent.KEYCODE_FORWARD_DEL)
             "BACK" -> ic.deleteSurroundingText(1, 0)
 
             "←" -> sendKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
@@ -261,25 +344,27 @@ class ControlKeyboardService : InputMethodService() {
             "ESC" -> sendKey(ic, KeyEvent.KEYCODE_ESCAPE)
             "ENTER" -> sendKey(ic, KeyEvent.KEYCODE_ENTER)
 
-            "SPACE" -> ic.commitText(" ", 1)
+            "SPACE" -> {
+                ic.commitText(" ", 1)
+                shiftOn = false
+            }
 
             "LINE" -> selectCurrentLine(ic)
-            "ALL" -> selectAll(ic)
+            "ALL" -> ic.performContextMenuAction(android.R.id.selectAll)
             "COPY" -> ic.performContextMenuAction(android.R.id.copy)
             "CUT" -> ic.performContextMenuAction(android.R.id.cut)
             "PASTE" -> ic.performContextMenuAction(android.R.id.paste)
 
             "," -> ic.commitText(",", 1)
             "." -> ic.commitText(".", 1)
+            "-" -> ic.commitText("-", 1)
+            "/" -> ic.commitText("/", 1)
+            ":" -> ic.commitText(":", 1)
 
             in "0".."9" -> ic.commitText(key, 1)
         }
 
-        refreshKeyboard()
-    }
-
-    private fun selectAll(ic: InputConnection) {
-        ic.performContextMenuAction(android.R.id.selectAll)
+        updateKeyboard()
     }
 
     private fun selectCurrentLine(ic: InputConnection) {
@@ -290,45 +375,50 @@ class ControlKeyboardService : InputMethodService() {
         val text = extracted.text?.toString() ?: return
         val cursor = extracted.selectionEnd.coerceIn(0, text.length)
 
-        val previous = text.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0))
+        val previous = text.lastIndexOf(
+            '\n', (cursor - 1).coerceAtLeast(0)
+        )
         val next = text.indexOf('\n', cursor)
 
         val start = if (previous < 0) 0 else previous + 1
         val end = if (next < 0) text.length else next
 
-        ic.setSelection(start, end)
+        ic.setSelection(
+            extracted.startOffset + start,
+            extracted.startOffset + end
+        )
     }
 
     private fun sendKey(ic: InputConnection, code: Int) {
-        var meta = 0
+        if (code == 0) return
 
+        var meta = 0
         if (shiftOn) meta = meta or KeyEvent.META_SHIFT_ON
         if (ctrlOn) meta = meta or KeyEvent.META_CTRL_ON
         if (altOn) meta = meta or KeyEvent.META_ALT_ON
 
-        val now = SystemClock.uptimeMillis()
+        val downTime = SystemClock.uptimeMillis()
 
         ic.sendKeyEvent(
             KeyEvent(
-                now, now,
+                downTime, downTime,
                 KeyEvent.ACTION_DOWN,
                 code, 0, meta
             )
         )
 
+        val upTime = SystemClock.uptimeMillis()
+
         ic.sendKeyEvent(
             KeyEvent(
-                now, now,
+                downTime, upTime,
                 KeyEvent.ACTION_UP,
                 code, 0, meta
             )
         )
 
+        shiftOn = false
         ctrlOn = false
         altOn = false
-    }
-
-    private fun refreshKeyboard() {
-        setInputView(onCreateInputView())
     }
 }
