@@ -384,10 +384,8 @@ class ControlKeyboardService : InputMethodService() {
             )
         }
         val ctrlMeta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
-        dispatch(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, ctrlMeta)
         dispatch(KeyEvent.ACTION_DOWN, code, ctrlMeta)
         dispatch(KeyEvent.ACTION_UP, code, ctrlMeta)
-        dispatch(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0)
         ctrlOn = false
     }
 
