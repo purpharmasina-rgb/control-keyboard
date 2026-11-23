@@ -20,11 +20,13 @@ class ControlKeyboardService : InputMethodService() {
     private var altOn = false
     private var arabicOn = false
     private var numberPage = false
+    private var symbolPage = 0
 
     private val modifierButtons = mutableMapOf<String, Button>()
     private val letterButtons = mutableMapOf<String, Button>()
     private var languageButton: Button? = null
     private var topShiftButton: Button? = null
+    private var symbolPageButton: Button? = null
 
     private lateinit var lettersPanel: LinearLayout
     private lateinit var letterRowsPanel: LinearLayout
@@ -86,9 +88,7 @@ class ControlKeyboardService : InputMethodService() {
             visibility = View.GONE
         }
 
-        addNumberRow(numbersPanel, listOf("1", "2", "3", "4", "5"))
-        addNumberRow(numbersPanel, listOf("6", "7", "8", "9", "0"))
-        addControlRow(numbersPanel, listOf("ABC", "-", "/", ":", "ENTER"))
+        rebuildNumberRows()
 
         root.addView(lettersPanel)
         root.addView(numbersPanel)
@@ -114,6 +114,7 @@ class ControlKeyboardService : InputMethodService() {
             }
             if (key == "SHIFT") topShiftButton = button
             if (key == "LANG") languageButton = button
+            if (key == "PAGE") symbolPageButton = button
 
             button.setOnClickListener { handleKey(key) }
 
@@ -209,6 +210,23 @@ class ControlKeyboardService : InputMethodService() {
         root.addView(row)
     }
 
+    private fun rebuildNumberRows() {
+        if (!::numbersPanel.isInitialized) return
+        numbersPanel.removeAllViews()
+
+        // Four compact pages: numbers, then three complete common symbol sets.
+        val pages = listOf(
+            listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
+            listOf("@", "#", "$", "%", "&", "*", "+", "=", "(", ")"),
+            listOf("!", "?", ":", ";", "\\", "/", "-", "_", "\"", "'"),
+            listOf("[", "]", "{", "}", "<", ">", "|", "~", "^", "€")
+        )
+        val keys = pages[symbolPage.coerceIn(0, pages.lastIndex)]
+        addNumberRow(numbersPanel, keys.take(5))
+        addNumberRow(numbersPanel, keys.drop(5))
+        addControlRow(numbersPanel, listOf("ABC", "PAGE", ",", ".", "ENTER"))
+    }
+
     private fun addSpacer(row: LinearLayout, weight: Float) {
         row.addView(
             Space(this),
@@ -258,6 +276,7 @@ class ControlKeyboardService : InputMethodService() {
             button.text = if (arabicOn) arabic[key] ?: key else key
         }
         languageButton?.text = if (arabicOn) "EN" else "عربي"
+        symbolPageButton?.text = "${symbolPage + 1}/4"
 
         if (::lettersPanel.isInitialized && ::numbersPanel.isInitialized) {
             lettersPanel.visibility =
@@ -376,6 +395,10 @@ class ControlKeyboardService : InputMethodService() {
 
             "123" -> numberPage = true
             "ABC" -> numberPage = false
+            "PAGE" -> {
+                symbolPage = (symbolPage + 1) % 4
+                rebuildNumberRows()
+            }
 
             "HOME" -> sendKey(ic, KeyEvent.KEYCODE_MOVE_HOME)
             "END" -> sendKey(ic, KeyEvent.KEYCODE_MOVE_END)
@@ -407,6 +430,9 @@ class ControlKeyboardService : InputMethodService() {
             "-" -> ic.commitText("-", 1)
             "/" -> ic.commitText("/", 1)
             ":" -> ic.commitText(":", 1)
+            "?" , "!", "@", "#", "$", "%", "&", "*", "+", "=", "(", ")",
+            "\\", "_", "\"", "'", "[", "]", "{", "}", "<", ">", "|", "~", "^", "€" ->
+                ic.commitText(key, 1)
 
             in "0".."9" -> ic.commitText(key, 1)
         }
