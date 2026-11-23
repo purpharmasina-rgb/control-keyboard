@@ -217,7 +217,7 @@ class ControlKeyboardService : InputMethodService() {
         // Four compact pages: numbers, then three complete common symbol sets.
         val pages = listOf(
             listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-            listOf("@", "#", "$", "%", "&", "*", "+", "=", "(", ")"),
+            listOf("@", "#", "\\$", "%", "&", "*", "+", "=", "(", ")"),
             listOf("!", "?", ":", ";", "\\", "/", "-", "_", "\"", "'"),
             listOf("[", "]", "{", "}", "<", ">", "|", "~", "^", "€")
         )
