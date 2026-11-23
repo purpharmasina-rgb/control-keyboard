@@ -26,18 +26,31 @@ class ControlKeyboardService : InputMethodService() {
     private var languageButton: Button? = null
 
     private lateinit var lettersPanel: LinearLayout
+    private lateinit var letterRowsPanel: LinearLayout
     private lateinit var numbersPanel: LinearLayout
 
+    // Arabic key positions follow the Samsung layout shown by the user.
     private val arabic = mapOf(
-        "Q" to "ض", "W" to "ص", "E" to "ث",
-        "R" to "ق", "T" to "ف", "Y" to "غ",
-        "U" to "ع", "I" to "ه", "O" to "خ",
-        "P" to "ح", "A" to "ش", "S" to "س",
-        "D" to "ي", "F" to "ب", "G" to "ل",
-        "H" to "ا", "J" to "ت", "K" to "ن",
-        "L" to "م", "Z" to "ئ", "X" to "ء",
-        "C" to "ؤ", "V" to "ر", "B" to "لا",
-        "N" to "ى", "M" to "ة"
+        "Q" to "ض", "W" to "ص", "E" to "ث", "R" to "ق",
+        "T" to "ف", "Y" to "غ", "U" to "ع", "I" to "ه",
+        "O" to "خ", "P" to "ح", "BRACKET_LEFT" to "ج",
+        "A" to "ش", "S" to "س", "D" to "ي", "F" to "ب",
+        "G" to "ل", "H" to "ا", "J" to "ت", "K" to "ن",
+        "L" to "م", "SEMICOLON" to "ك", "APOSTROPHE" to "ط",
+        "BACKTICK" to "ذ", "X" to "ء", "C" to "ؤ",
+        "V" to "ر", "N" to "ى", "M" to "ة",
+        "COMMA" to "و", "PERIOD" to "ز", "SLASH" to "ظ",
+        "BRACKET_RIGHT" to "د"
+    )
+
+    private val arabicRow1 = listOf(
+        "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "BRACKET_LEFT"
+    )
+    private val arabicRow2 = listOf(
+        "A", "S", "D", "F", "G", "H", "J", "K", "L", "SEMICOLON", "APOSTROPHE"
+    )
+    private val arabicRow3 = listOf(
+        "BACKTICK", "X", "C", "V", "N", "M", "COMMA", "PERIOD", "SLASH", "BRACKET_RIGHT"
     )
 
     override fun onCreateInputView(): View {
@@ -60,23 +73,11 @@ class ControlKeyboardService : InputMethodService() {
             orientation = LinearLayout.VERTICAL
         }
 
-        addLetterRow(
-            lettersPanel,
-            listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P")
-        )
-
-        addLetterRow(
-            lettersPanel,
-            listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"),
-            centered = true
-        )
-
-        addLetterRow(
-            lettersPanel,
-            listOf("Z", "X", "C", "V", "B", "N", "M"),
-            shiftAndBack = true
-        )
-
+        letterRowsPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        lettersPanel.addView(letterRowsPanel)
+        rebuildLetterRows()
         addControlRow(lettersPanel, listOf("123", ",", "SPACE", ".", "ENTER"))
 
         numbersPanel = LinearLayout(this).apply {
@@ -254,6 +255,33 @@ class ControlKeyboardService : InputMethodService() {
         }
     }
 
+    private fun rebuildLetterRows() {
+        if (!::letterRowsPanel.isInitialized) return
+        letterRowsPanel.removeAllViews()
+        letterButtons.clear()
+
+        if (arabicOn) {
+            addLetterRow(letterRowsPanel, arabicRow1)
+            addLetterRow(letterRowsPanel, arabicRow2, centered = true)
+            addLetterRow(letterRowsPanel, arabicRow3, shiftAndBack = true)
+        } else {
+            addLetterRow(
+                letterRowsPanel,
+                listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P")
+            )
+            addLetterRow(
+                letterRowsPanel,
+                listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"),
+                centered = true
+            )
+            addLetterRow(
+                letterRowsPanel,
+                listOf("Z", "X", "C", "V", "B", "N", "M"),
+                shiftAndBack = true
+            )
+        }
+    }
+
     private fun handleLetter(key: String) {
         val ic = currentInputConnection ?: return
 
@@ -277,6 +305,14 @@ class ControlKeyboardService : InputMethodService() {
 
     private fun letterKeyCode(key: String): Int {
         return when (key) {
+            "BRACKET_LEFT" -> KeyEvent.KEYCODE_LEFT_BRACKET
+            "SEMICOLON" -> KeyEvent.KEYCODE_SEMICOLON
+            "APOSTROPHE" -> KeyEvent.KEYCODE_APOSTROPHE
+            "BACKTICK" -> KeyEvent.KEYCODE_GRAVE
+            "COMMA" -> KeyEvent.KEYCODE_COMMA
+            "PERIOD" -> KeyEvent.KEYCODE_PERIOD
+            "SLASH" -> KeyEvent.KEYCODE_SLASH
+            "BRACKET_RIGHT" -> KeyEvent.KEYCODE_RIGHT_BRACKET
             "A" -> KeyEvent.KEYCODE_A
             "B" -> KeyEvent.KEYCODE_B
             "C" -> KeyEvent.KEYCODE_C
@@ -315,7 +351,10 @@ class ControlKeyboardService : InputMethodService() {
             "SHIFT" -> shiftOn = !shiftOn
             "ALT" -> altOn = !altOn
 
-            "LANG" -> arabicOn = !arabicOn
+            "LANG" -> {
+                arabicOn = !arabicOn
+                rebuildLetterRows()
+            }
 
             "123" -> numberPage = true
             "ABC" -> numberPage = false
