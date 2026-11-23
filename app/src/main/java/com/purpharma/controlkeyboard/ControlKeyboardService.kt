@@ -135,6 +135,10 @@ class ControlKeyboardService : InputMethodService() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            // Samsung's Arabic screenshot is ordered left-to-right; keep English's
+            // original RTL row behavior unchanged.
+            layoutDirection = if (arabicOn) View.LAYOUT_DIRECTION_LTR
+                else View.LAYOUT_DIRECTION_RTL
         }
 
         if (centered) addSpacer(row, 0.5f)
