@@ -114,9 +114,10 @@ class ControlKeyboardService : InputMethodService() {
 
             button.setOnClickListener { handleKey(key) }
 
+            val keyWeight = if (key == "SPACE") 2.5f else 1f
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                LinearLayout.LayoutParams(0, dp(38), keyWeight).apply {
                     setMargins(dp(2), dp(2), dp(2), dp(2))
                 }
             )
