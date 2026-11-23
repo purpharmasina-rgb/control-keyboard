@@ -135,10 +135,9 @@ class ControlKeyboardService : InputMethodService() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            // Samsung's Arabic screenshot is ordered left-to-right; keep English's
-            // original RTL row behavior unchanged.
-            layoutDirection = if (arabicOn) View.LAYOUT_DIRECTION_LTR
-                else View.LAYOUT_DIRECTION_RTL
+            // Keep both Latin and Arabic letter rows in their intended
+            // left-to-right key order, independent of the phone's RTL locale.
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
         if (centered) addSpacer(row, 0.5f)
@@ -186,6 +185,8 @@ class ControlKeyboardService : InputMethodService() {
     private fun addNumberRow(root: LinearLayout, keys: List<String>) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            // Prevent the device's RTL locale from reversing number/symbol keys.
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
         keys.forEach { key ->
