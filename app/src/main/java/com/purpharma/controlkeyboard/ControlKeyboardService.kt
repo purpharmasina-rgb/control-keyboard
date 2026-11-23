@@ -24,6 +24,7 @@ class ControlKeyboardService : InputMethodService() {
     private val modifierButtons = mutableMapOf<String, Button>()
     private val letterButtons = mutableMapOf<String, Button>()
     private var languageButton: Button? = null
+    private var topShiftButton: Button? = null
 
     private lateinit var lettersPanel: LinearLayout
     private lateinit var letterRowsPanel: LinearLayout
@@ -108,6 +109,7 @@ class ControlKeyboardService : InputMethodService() {
             if (key in listOf("CTRL", "SHIFT", "ALT")) {
                 modifierButtons[key] = button
             }
+            if (key == "SHIFT") topShiftButton = button
             if (key == "LANG") languageButton = button
 
             button.setOnClickListener { handleKey(key) }
@@ -127,7 +129,8 @@ class ControlKeyboardService : InputMethodService() {
         root: LinearLayout,
         keys: List<String>,
         centered: Boolean = false,
-        shiftAndBack: Boolean = false
+        shiftAndBack: Boolean = false,
+        backOnly: Boolean = false
     ) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -165,7 +168,7 @@ class ControlKeyboardService : InputMethodService() {
 
         if (centered) addSpacer(row, 0.5f)
 
-        if (shiftAndBack) {
+        if (shiftAndBack || backOnly) {
             val back = makeButton("⌫", 19f, 48)
             back.setOnClickListener { handleKey("BACK") }
             row.addView(back, LinearLayout.LayoutParams(0, dp(48), 1.5f).apply {
@@ -260,10 +263,13 @@ class ControlKeyboardService : InputMethodService() {
         letterRowsPanel.removeAllViews()
         letterButtons.clear()
 
+        // In Arabic mode the top SHIFT control remains the active modifier;
+        // the Samsung third row has letters plus Backspace, without a second Shift key.
+        topShiftButton?.let { modifierButtons["SHIFT"] = it }
         if (arabicOn) {
             addLetterRow(letterRowsPanel, arabicRow1)
-            addLetterRow(letterRowsPanel, arabicRow2, centered = true)
-            addLetterRow(letterRowsPanel, arabicRow3, shiftAndBack = true)
+            addLetterRow(letterRowsPanel, arabicRow2)
+            addLetterRow(letterRowsPanel, arabicRow3, backOnly = true)
         } else {
             addLetterRow(
                 letterRowsPanel,
