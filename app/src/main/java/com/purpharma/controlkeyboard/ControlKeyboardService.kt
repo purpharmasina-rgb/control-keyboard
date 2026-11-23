@@ -101,6 +101,9 @@ class ControlKeyboardService : InputMethodService() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            // Keep the authored key order stable on RTL Android locales:
+            // 123 stays left and ENTER stays right.
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
         keys.forEach { key ->
@@ -131,7 +134,8 @@ class ControlKeyboardService : InputMethodService() {
         keys: List<String>,
         centered: Boolean = false,
         shiftAndBack: Boolean = false,
-        backOnly: Boolean = false
+        backOnly: Boolean = false,
+        sideSpacerWeight: Float = 0.5f
     ) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -141,7 +145,7 @@ class ControlKeyboardService : InputMethodService() {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
-        if (centered) addSpacer(row, 0.5f)
+        if (centered) addSpacer(row, sideSpacerWeight)
 
         if (shiftAndBack) {
             val shift = makeButton("SHIFT", 12f, 48)
@@ -170,7 +174,7 @@ class ControlKeyboardService : InputMethodService() {
             )
         }
 
-        if (centered) addSpacer(row, 0.5f)
+        if (centered) addSpacer(row, sideSpacerWeight)
 
         if (shiftAndBack || backOnly) {
             val back = makeButton("⌫", 19f, 48)
@@ -289,7 +293,9 @@ class ControlKeyboardService : InputMethodService() {
             addLetterRow(
                 letterRowsPanel,
                 listOf("Z", "X", "C", "V", "B", "N", "M"),
-                shiftAndBack = true
+                centered = true,
+                backOnly = true,
+                sideSpacerWeight = 0.75f
             )
         }
     }
