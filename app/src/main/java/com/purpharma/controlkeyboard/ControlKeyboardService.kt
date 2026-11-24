@@ -146,9 +146,9 @@ class ControlKeyboardService : InputMethodService() {
             setBackgroundColor(Color.rgb(30, 30, 30))
         }
 
-        addControlRow(root, listOf("CTRL", "SHIFT", "ALT", "ESC"))
+        addControlRow(root, listOf("ESC", "SHIFT", "ALT", "CTRL"))
         addControlRow(root, listOf("HOME", "END", "DEL", "←", "→"))
-        addControlRow(root, listOf("↑", "↓", "TAB", "LANG"))
+        addArrowLanguageRow(root)
         addControlRow(root, listOf("LINE", "ALL", "COPY", "CUT", "PASTE", "REPL", "CLR"))
 
         lettersPanel = LinearLayout(this).apply {
@@ -213,13 +213,51 @@ class ControlKeyboardService : InputMethodService() {
                 }
             }
 
-            val keyWeight = if (key == "SPACE") 2.5f else 1f
+            val keyWeight = when {
+                key == "SPACE" -> 2.5f
+                !arabicOn && key == "X" -> 1.2f
+                else -> 1f
+            }
             row.addView(
                 button,
                 LinearLayout.LayoutParams(0, dp(38), keyWeight).apply {
                     setMargins(dp(2), dp(2), dp(2), dp(2))
                 }
             )
+        }
+
+        root.addView(row)
+    }
+
+    // Keep LANG on the far left and align the vertical arrows directly
+    // beneath the horizontal arrows in the row above.
+    private fun addArrowLanguageRow(root: LinearLayout) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+        }
+
+        listOf("LANG", "TAB").forEach { key ->
+            val button = makeButton(key, 12f, 38)
+            if (key == "LANG") languageButton = button
+            button.setOnClickListener {
+                buzz(it)
+                handleKey(key)
+            }
+            row.addView(button, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            })
+        }
+
+        row.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
+
+        listOf("↑", "↓").forEach { key ->
+            val button = makeButton(key, 12f, 38)
+            attachRepeat(button, key)
+            row.addView(button, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            })
         }
 
         root.addView(row)
@@ -303,16 +341,21 @@ class ControlKeyboardService : InputMethodService() {
         if (!::numbersPanel.isInitialized) return
         numbersPanel.removeAllViews()
 
-        // Four compact pages: numbers, then three complete common symbol sets.
+        // The first screen includes digits plus the punctuation users need most.
+        // Remaining pages hold the less frequently used symbols.
         val pages = listOf(
-            listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-            listOf("@", "#", "$", "%", "&", "*", "+", "=", "(", ")"),
-            listOf("!", "?", ":", ";", "\\", "/", "-", "_", "\"", "'"),
-            listOf("[", "]", "{", "}", "<", ">", "|", "~", "^", "€")
+            listOf(
+                "1", "2", "3", "4", "5", "6", "7",
+                "8", "9", "0", ",", ".", "?", "!",
+                "$", "/", "€", "@", "#", "%"
+            ),
+            listOf("&", "*", "+", "=", "(", ")", "-", "_", "\"", "'"),
+            listOf(":", ";", "\\", "[", "]", "{", "}", "<", ">", "£"),
+            listOf("|", "~", "^", "¥", "°", "…", "\u0060", "§", "©", "®")
         )
         val keys = pages[symbolPage.coerceIn(0, pages.lastIndex)]
-        addNumberRow(numbersPanel, keys.take(5))
-        addNumberRow(numbersPanel, keys.drop(5))
+        val rowSize = if (symbolPage == 0) 7 else 5
+        keys.chunked(rowSize).forEach { addNumberRow(numbersPanel, it) }
         addControlRow(numbersPanel, listOf("ABC", "PAGE", ",", ".", "ENTER"))
     }
 
@@ -405,15 +448,12 @@ class ControlKeyboardService : InputMethodService() {
             )
             addLetterRow(
                 letterRowsPanel,
-                listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"),
-                centered = true
+                listOf("A", "S", "D", "F", "G", "H", "J", "K", "L")
             )
             addLetterRow(
                 letterRowsPanel,
                 listOf("Z", "X", "C", "V", "B", "N", "M"),
-                centered = true,
-                backOnly = true,
-                sideSpacerWeight = 0.75f
+                backOnly = true
             )
         }
     }
