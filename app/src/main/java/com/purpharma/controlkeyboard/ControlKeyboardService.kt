@@ -1,16 +1,25 @@
-
 package com.purpharma.controlkeyboard
 
-import android.inputmethodservice.InputMethodService
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
+import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
-import android.view.KeyEvent
-import android.view.View
 import android.view.Gravity
-import android.view.inputmethod.InputConnection
+import android.view.HapticFeedbackConstants
+import android.view.KeyCharacterMap
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
+import android.view.inputmethod.InputConnection
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.Space
 
 class ControlKeyboardService : InputMethodService() {
@@ -22,15 +31,50 @@ class ControlKeyboardService : InputMethodService() {
     private var numberPage = false
     private var symbolPage = 0
 
+    // browserMode: the target app is a web browser (e.g. Cloudflare's Monaco editor).
+    // In that mode we send real Ctrl key events instead of context-menu actions,
+    // because the editor keeps only the current line in its hidden text field.
+    // forceKeyMode: manual override, toggled by long-pressing ALL.
+    private var browserMode = false
+    private var forceKeyMode = false
+    private val keyMode: Boolean get() = browserMode || forceKeyMode
+
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var popup: PopupWindow? = null
+    private var activeRepeat: Runnable? = null
+    private var pendingInputAction: Runnable? = null
+
     private val modifierButtons = mutableMapOf<String, Button>()
     private val letterButtons = mutableMapOf<String, Button>()
     private var languageButton: Button? = null
     private var topShiftButton: Button? = null
     private var symbolPageButton: Button? = null
+    private var allButton: Button? = null
 
     private lateinit var lettersPanel: LinearLayout
     private lateinit var letterRowsPanel: LinearLayout
     private lateinit var numbersPanel: LinearLayout
+
+    private val keyColor = Color.rgb(75, 75, 75)
+    private val keyPressed = Color.rgb(125, 125, 125)
+    private val activeColor = Color.rgb(35, 105, 190)
+    private val activePressed = Color.rgb(75, 145, 230)
+
+    private val keyFlags = KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
+    private val ctrlMeta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
+    private val shiftMeta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+    private val altMeta = KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
+
+    private val repeatKeys = setOf("←", "→", "↑", "↓", "BACK", "DEL")
+
+    private val browserPackages = setOf(
+        "com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary",
+        "org.chromium.chrome", "org.mozilla.firefox", "org.mozilla.firefox_beta",
+        "org.mozilla.fenix", "com.brave.browser", "com.microsoft.emmx",
+        "com.sec.android.app.sbrowser", "com.sec.android.app.sbrowser.beta",
+        "com.opera.browser", "com.opera.mini.native", "com.kiwibrowser.browser",
+        "com.duckduckgo.mobile.android", "com.vivaldi.browser"
+    )
 
     // Arabic key positions follow the Samsung layout shown by the user.
     private val arabic = mapOf(
@@ -46,6 +90,17 @@ class ControlKeyboardService : InputMethodService() {
         "BRACKET_RIGHT" to "د"
     )
 
+    // Long-press alternatives for Arabic letters (key names follow the map above).
+    private val arabicLetterPopups = mapOf(
+        "H" to listOf("أ", "إ", "آ"),
+        "D" to listOf("ئ"),
+        "V" to listOf("لا"),
+        "X" to listOf(
+            "\u064B", "\u064C", "\u064D", "\u064E",
+            "\u064F", "\u0650", "\u0651", "\u0652"
+        )
+    )
+
     private val arabicRow1 = listOf(
         "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "BRACKET_LEFT"
     )
@@ -55,6 +110,31 @@ class ControlKeyboardService : InputMethodService() {
     private val arabicRow3 = listOf(
         "BACKTICK", "X", "C", "V", "N", "M", "COMMA", "PERIOD", "SLASH", "BRACKET_RIGHT"
     )
+
+    // ---------------------------------------------------------------- lifecycle
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        stopRepeat()
+        cancelPendingInputAction()
+        browserMode = (info?.packageName ?: "") in browserPackages
+        dismissPopup()
+        updateKeyboard()
+    }
+
+    override fun onFinishInputView(finishingInput: Boolean) {
+        stopRepeat()
+        cancelPendingInputAction()
+        dismissPopup()
+        super.onFinishInputView(finishingInput)
+    }
+
+    override fun onWindowHidden() {
+        stopRepeat()
+        cancelPendingInputAction()
+        dismissPopup()
+        super.onWindowHidden()
+    }
 
     override fun onCreateInputView(): View {
         modifierButtons.clear()
@@ -69,8 +149,7 @@ class ControlKeyboardService : InputMethodService() {
         addControlRow(root, listOf("CTRL", "SHIFT", "ALT", "ESC"))
         addControlRow(root, listOf("HOME", "END", "DEL", "←", "→"))
         addControlRow(root, listOf("↑", "↓", "TAB", "LANG"))
-
-        addControlRow(root, listOf("LINE", "ALL", "COPY", "CUT", "PASTE"))
+        addControlRow(root, listOf("LINE", "ALL", "COPY", "CUT", "PASTE", "REPL", "CLR"))
 
         lettersPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -97,12 +176,13 @@ class ControlKeyboardService : InputMethodService() {
         return root
     }
 
+    // ---------------------------------------------------------------- building UI
+
     private fun addControlRow(root: LinearLayout, keys: List<String>) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            // Keep the authored key order stable on RTL Android locales:
-            // 123 stays left and ENTER stays right.
+            // Keep the authored key order stable on RTL Android locales.
             layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
@@ -115,8 +195,23 @@ class ControlKeyboardService : InputMethodService() {
             if (key == "SHIFT") topShiftButton = button
             if (key == "LANG") languageButton = button
             if (key == "PAGE") symbolPageButton = button
+            if (key == "ALL") allButton = button
 
-            button.setOnClickListener { handleKey(key) }
+            if (key in repeatKeys) {
+                attachRepeat(button, key)
+            } else {
+                button.setOnClickListener {
+                    buzz(it)
+                    handleKey(key)
+                }
+                when (key) {
+                    ".", "," -> button.setOnLongClickListener { longPressFor(button, key) }
+                    "ALL" -> button.setOnLongClickListener {
+                        toggleForceKeyMode(button)
+                        true
+                    }
+                }
+            }
 
             val keyWeight = if (key == "SPACE") 2.5f else 1f
             row.addView(
@@ -134,28 +229,16 @@ class ControlKeyboardService : InputMethodService() {
         root: LinearLayout,
         keys: List<String>,
         centered: Boolean = false,
-        shiftAndBack: Boolean = false,
         backOnly: Boolean = false,
         sideSpacerWeight: Float = 0.5f
     ) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            // Keep both Latin and Arabic letter rows in their intended
-            // left-to-right key order, independent of the phone's RTL locale.
             layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
         if (centered) addSpacer(row, sideSpacerWeight)
-
-        if (shiftAndBack) {
-            val shift = makeButton("SHIFT", 12f, 48)
-            modifierButtons["SHIFT"] = shift
-            shift.setOnClickListener { handleKey("SHIFT") }
-            row.addView(shift, LinearLayout.LayoutParams(0, dp(48), 1.5f).apply {
-                setMargins(dp(1), dp(2), dp(1), dp(2))
-            })
-        }
 
         keys.forEach { key ->
             val button = makeButton(
@@ -165,7 +248,11 @@ class ControlKeyboardService : InputMethodService() {
             )
 
             letterButtons[key] = button
-            button.setOnClickListener { handleLetter(key) }
+            button.setOnClickListener {
+                buzz(it)
+                handleLetter(key)
+            }
+            button.setOnLongClickListener { longPressFor(button, key) }
 
             row.addView(
                 button,
@@ -177,9 +264,9 @@ class ControlKeyboardService : InputMethodService() {
 
         if (centered) addSpacer(row, sideSpacerWeight)
 
-        if (shiftAndBack || backOnly) {
+        if (backOnly) {
             val back = makeButton("⌫", 19f, 48)
-            back.setOnClickListener { handleKey("BACK") }
+            attachRepeat(back, "BACK")
             row.addView(back, LinearLayout.LayoutParams(0, dp(48), 1.5f).apply {
                 setMargins(dp(1), dp(2), dp(1), dp(2))
             })
@@ -191,13 +278,15 @@ class ControlKeyboardService : InputMethodService() {
     private fun addNumberRow(root: LinearLayout, keys: List<String>) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            // Prevent the device's RTL locale from reversing number/symbol keys.
             layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
         keys.forEach { key ->
             val button = makeButton(key, 18f, 44)
-            button.setOnClickListener { handleKey(key) }
+            button.setOnClickListener {
+                buzz(it)
+                handleKey(key)
+            }
 
             row.addView(
                 button,
@@ -234,6 +323,17 @@ class ControlKeyboardService : InputMethodService() {
         )
     }
 
+    private fun keyBg(normal: Int, pressed: Int): StateListDrawable {
+        fun shape(color: Int) = GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(6).toFloat()
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), shape(pressed))
+            addState(intArrayOf(), shape(normal))
+        }
+    }
+
     private fun makeButton(
         label: String,
         size: Float,
@@ -250,7 +350,7 @@ class ControlKeyboardService : InputMethodService() {
             isSingleLine = true
             includeFontPadding = false
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(75, 75, 75))
+            background = keyBg(keyColor, keyPressed)
             layoutParams = LinearLayout.LayoutParams(
                 0, height, 1f
             )
@@ -266,10 +366,9 @@ class ControlKeyboardService : InputMethodService() {
                 else -> false
             }
 
-            button.setBackgroundColor(
-                if (active) Color.rgb(35, 105, 190)
-                else Color.rgb(75, 75, 75)
-            )
+            button.background =
+                if (active) keyBg(activeColor, activePressed)
+                else keyBg(keyColor, keyPressed)
         }
 
         letterButtons.forEach { (key, button) ->
@@ -277,6 +376,7 @@ class ControlKeyboardService : InputMethodService() {
         }
         languageButton?.text = if (arabicOn) "EN" else "عربي"
         symbolPageButton?.text = "${symbolPage + 1}/4"
+        allButton?.text = if (forceKeyMode) "ALL*" else "ALL"
 
         if (::lettersPanel.isInitialized && ::numbersPanel.isInitialized) {
             lettersPanel.visibility =
@@ -292,8 +392,7 @@ class ControlKeyboardService : InputMethodService() {
         letterRowsPanel.removeAllViews()
         letterButtons.clear()
 
-        // In Arabic mode the top SHIFT control remains the active modifier;
-        // the Samsung third row has letters plus Backspace, without a second Shift key.
+        // The top SHIFT control stays the active modifier in both layouts.
         topShiftButton?.let { modifierButtons["SHIFT"] = it }
         if (arabicOn) {
             addLetterRow(letterRowsPanel, arabicRow1)
@@ -319,12 +418,170 @@ class ControlKeyboardService : InputMethodService() {
         }
     }
 
+    // ---------------------------------------------------------------- touch helpers
+
+    private fun buzz(v: View) {
+        v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    }
+
+    // Press once = one action; hold = repeats (arrows, delete, backspace).
+    private fun attachRepeat(button: Button, key: String) {
+        button.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    stopRepeat()
+                    v.isPressed = true
+                    buzz(v)
+                    handleKey(key)
+                    val repeater = object : Runnable {
+                        override fun run() {
+                            if (!v.isPressed) {
+                                if (activeRepeat === this) activeRepeat = null
+                                return
+                            }
+                            handleKey(key)
+                            uiHandler.postDelayed(this, 60)
+                        }
+                    }
+                    activeRepeat = repeater
+                    uiHandler.postDelayed(repeater, 380)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.isPressed = false
+                    stopRepeat()
+                }
+            }
+            true
+        }
+    }
+
+    private fun stopRepeat() {
+        activeRepeat?.let { uiHandler.removeCallbacks(it) }
+        activeRepeat = null
+    }
+
+    private fun cancelPendingInputAction() {
+        pendingInputAction?.let { uiHandler.removeCallbacks(it) }
+        pendingInputAction = null
+    }
+
+    private fun scheduleInputAction(action: () -> Unit) {
+        cancelPendingInputAction()
+        val task = Runnable {
+            pendingInputAction = null
+            action()
+            updateKeyboard()
+        }
+        pendingInputAction = task
+        uiHandler.postDelayed(task, 150)
+    }
+
+    private fun toggleForceKeyMode(v: View) {
+        forceKeyMode = !forceKeyMode
+        buzz(v)
+        updateKeyboard()
+    }
+
+    // ---------------------------------------------------------------- popups
+
+    private fun popupItems(key: String): List<String> {
+        return if (arabicOn && !numberPage) {
+            when (key) {
+                "." -> listOf("؟", "!", "،", "؛", ":", "…")
+                "," -> listOf("-", "_", "'", "\"", "(", ")", "/", "@")
+                else -> arabicLetterPopups[key] ?: emptyList()
+            }
+        } else {
+            when (key) {
+                "." -> listOf("?", "!", ":", ";", "…")
+                "," -> listOf("-", "_", "'", "\"", "(", ")", "/", "@")
+                else -> emptyList()
+            }
+        }
+    }
+
+    private fun longPressFor(button: Button, key: String): Boolean {
+        val items = popupItems(key)
+        if (items.isEmpty()) return false
+        buzz(button)
+        showPopup(button, items)
+        return true
+    }
+
+    private fun popupLabel(item: String): String {
+        // Show Arabic diacritics attached to a tatweel so they are visible.
+        return if (item.length == 1 && item[0] in '\u064B'..'\u0652') "\u0640$item" else item
+    }
+
+    private fun showPopup(anchor: View, items: List<String>) {
+        dismissPopup()
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(50, 50, 50))
+                cornerRadius = dp(8).toFloat()
+            }
+        }
+
+        items.forEach { item ->
+            val b = Button(this).apply {
+                text = popupLabel(item)
+                textSize = 20f
+                isAllCaps = false
+                minWidth = 0
+                minHeight = 0
+                setPadding(0, 0, 0, 0)
+                includeFontPadding = false
+                setTextColor(Color.WHITE)
+                background = keyBg(keyColor, keyPressed)
+            }
+            b.setOnClickListener {
+                buzz(it)
+                currentInputConnection?.commitText(item, 1)
+                shiftOn = false
+                dismissPopup()
+                updateKeyboard()
+            }
+            row.addView(
+                b,
+                LinearLayout.LayoutParams(dp(40), dp(44)).apply {
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
+                }
+            )
+        }
+
+        val width = items.size * dp(44) + dp(8)
+        val height = dp(44) + dp(4) + dp(8)
+
+        val pw = PopupWindow(row, width, height)
+        pw.isOutsideTouchable = true
+        pw.isFocusable = false
+        pw.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        popup = pw
+
+        try {
+            pw.showAsDropDown(anchor, 0, -(anchor.height + height + dp(4)))
+        } catch (e: Exception) {
+            popup = null
+        }
+    }
+
+    private fun dismissPopup() {
+        popup?.dismiss()
+        popup = null
+    }
+
+    // ---------------------------------------------------------------- input handling
+
     private fun handleLetter(key: String) {
         val ic = currentInputConnection ?: return
 
-        if (ctrlOn) {
-            sendCtrlShortcut(ic, letterKeyCode(key))
-            ctrlOn = false
+        if (ctrlOn || altOn) {
+            val code = letterKeyCode(key)
+            if (ctrlOn) sendCtrlShortcut(ic, code) else sendKey(ic, code)
             updateKeyboard()
             return
         }
@@ -389,6 +646,7 @@ class ControlKeyboardService : InputMethodService() {
             "ALT" -> altOn = !altOn
 
             "LANG" -> {
+                dismissPopup()
                 arabicOn = !arabicOn
                 rebuildLetterRows()
             }
@@ -403,7 +661,7 @@ class ControlKeyboardService : InputMethodService() {
             "HOME" -> sendKey(ic, KeyEvent.KEYCODE_MOVE_HOME)
             "END" -> sendKey(ic, KeyEvent.KEYCODE_MOVE_END)
             "DEL" -> sendKey(ic, KeyEvent.KEYCODE_FORWARD_DEL)
-            "BACK" -> ic.deleteSurroundingText(1, 0)
+            "BACK" -> sendKey(ic, KeyEvent.KEYCODE_DEL)
 
             "←" -> sendKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
             "→" -> sendKey(ic, KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -412,7 +670,7 @@ class ControlKeyboardService : InputMethodService() {
 
             "TAB" -> sendKey(ic, KeyEvent.KEYCODE_TAB)
             "ESC" -> sendKey(ic, KeyEvent.KEYCODE_ESCAPE)
-            "ENTER" -> sendKey(ic, KeyEvent.KEYCODE_ENTER)
+            "ENTER" -> sendEnter(ic)
 
             "SPACE" -> {
                 ic.commitText(" ", 1)
@@ -420,17 +678,19 @@ class ControlKeyboardService : InputMethodService() {
             }
 
             "LINE" -> selectCurrentLine(ic)
-            "ALL" -> selectAllWithFallback(ic)
-            "COPY" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_C)
-            "CUT" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_X)
-            "PASTE" -> sendCtrlShortcut(ic, KeyEvent.KEYCODE_V)
+            "ALL" -> selectAll(ic)
+            "COPY" -> clipboardAction(ic, android.R.id.copy, KeyEvent.KEYCODE_C)
+            "CUT" -> clipboardAction(ic, android.R.id.cut, KeyEvent.KEYCODE_X)
+            "PASTE" -> clipboardAction(ic, android.R.id.paste, KeyEvent.KEYCODE_V)
+            "REPL" -> replaceAll()
+            "CLR" -> clearAll()
 
             "," -> ic.commitText(",", 1)
             "." -> ic.commitText(".", 1)
             "-" -> ic.commitText("-", 1)
             "/" -> ic.commitText("/", 1)
             ":" -> ic.commitText(":", 1)
-            "?" , "!", "@", "#", "$", "%", "&", "*", "+", "=", "(", ")",
+            "?", "!", "@", "#", "$", "%", "&", "*", "+", "=", "(", ")",
             "\\", "_", "\"", "'", "[", "]", "{", "}", "<", ">", "|", "~", "^", "€" ->
                 ic.commitText(key, 1)
 
@@ -440,39 +700,60 @@ class ControlKeyboardService : InputMethodService() {
         updateKeyboard()
     }
 
-    private fun selectAllWithFallback(ic: InputConnection) {
-        // Try the editor's native Select All action before synthesizing Ctrl+A.
-        val handled = ic.performContextMenuAction(android.R.id.selectAll)
-        if (!handled) {
+    // ---------------------------------------------------------------- select / copy / paste
+
+    private fun selectAll(ic: InputConnection) {
+        if (keyMode) {
+            // Browsers / web editors: send a real Ctrl+A so the page selects everything.
             sendCtrlShortcut(ic, KeyEvent.KEYCODE_A)
+            return
+        }
+        // Normal fields: try the editor's native Select All first.
+        if (ic.performContextMenuAction(android.R.id.selectAll)) {
+            resetModifiers()
         } else {
-            ctrlOn = false
-            updateKeyboard()
+            sendCtrlShortcut(ic, KeyEvent.KEYCODE_A)
         }
     }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density + 0.5f).toInt()
-
-    private fun sendCtrlShortcut(ic: InputConnection, code: Int) {
-        if (code == 0) return
-        val downTime = SystemClock.uptimeMillis()
-        val flags = KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
-        fun dispatch(action: Int, keyCode: Int, metaState: Int) {
-            ic.sendKeyEvent(
-                KeyEvent(
-                    downTime, SystemClock.uptimeMillis(), action, keyCode, 0,
-                    metaState, KeyEvent.KEYCODE_UNKNOWN, 0, flags
-                )
-            )
+    private fun clipboardAction(ic: InputConnection, actionId: Int, code: Int) {
+        if (keyMode) {
+            sendCtrlShortcut(ic, code)
+            return
         }
-        val ctrlMeta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
-        dispatch(KeyEvent.ACTION_DOWN, code, ctrlMeta)
-        dispatch(KeyEvent.ACTION_UP, code, ctrlMeta)
-        ctrlOn = false
+        if (ic.performContextMenuAction(actionId)) {
+            resetModifiers()
+        } else {
+            sendCtrlShortcut(ic, code)
+        }
+    }
+
+    // Select everything, then paste the clipboard over it (replace a whole file in one tap).
+    private fun replaceAll() {
+        val ic = currentInputConnection ?: return
+        selectAll(ic)
+        scheduleInputAction {
+            clipboardAction(ic, android.R.id.paste, KeyEvent.KEYCODE_V)
+        }
+    }
+
+    // Select everything, then delete it.
+    private fun clearAll() {
+        val ic = currentInputConnection ?: return
+        selectAll(ic)
+        scheduleInputAction {
+            sendRaw(ic, KeyEvent.KEYCODE_DEL, 0)
+        }
     }
 
     private fun selectCurrentLine(ic: InputConnection) {
+        if (keyMode) {
+            // Web editors only expose the current line to us, so use Home + Shift+End.
+            sendRaw(ic, KeyEvent.KEYCODE_MOVE_HOME, 0)
+            sendRaw(ic, KeyEvent.KEYCODE_MOVE_END, shiftMeta)
+            return
+        }
+
         val extracted = ic.getExtractedText(
             ExtractedTextRequest(), 0
         ) ?: return
@@ -494,29 +775,87 @@ class ControlKeyboardService : InputMethodService() {
         )
     }
 
-    private fun sendKey(ic: InputConnection, code: Int) {
-        if (code == 0) return
+    // ---------------------------------------------------------------- key events
 
-        var meta = 0
-        if (shiftOn) meta = meta or KeyEvent.META_SHIFT_ON
-        if (ctrlOn) meta = meta or KeyEvent.META_CTRL_ON
-        if (altOn) meta = meta or KeyEvent.META_ALT_ON
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density + 0.5f).toInt()
 
-        val downTime = SystemClock.uptimeMillis()
-
-        val flags = KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
-        ic.sendKeyEvent(
-            KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, code, 0, meta,
-                KeyEvent.KEYCODE_UNKNOWN, 0, flags)
-        )
-        val upTime = SystemClock.uptimeMillis()
-        ic.sendKeyEvent(
-            KeyEvent(downTime, upTime, KeyEvent.ACTION_UP, code, 0, meta,
-                KeyEvent.KEYCODE_UNKNOWN, 0, flags)
-        )
-
+    private fun resetModifiers() {
         shiftOn = false
         ctrlOn = false
         altOn = false
+    }
+
+    private fun deviceId(): Int =
+        if (keyMode) KeyCharacterMap.VIRTUAL_KEYBOARD else 0
+
+    private fun keyEvent(
+        downTime: Long,
+        action: Int,
+        code: Int,
+        meta: Int
+    ): KeyEvent {
+        return KeyEvent(
+            downTime, SystemClock.uptimeMillis(), action, code, 0,
+            meta, deviceId(), 0, keyFlags
+        )
+    }
+
+    private fun sendRaw(ic: InputConnection, code: Int, meta: Int) {
+        if (code == 0) return
+        val downTime = SystemClock.uptimeMillis()
+        ic.sendKeyEvent(keyEvent(downTime, KeyEvent.ACTION_DOWN, code, meta))
+        ic.sendKeyEvent(keyEvent(downTime, KeyEvent.ACTION_UP, code, meta))
+    }
+
+    private fun currentMeta(): Int {
+        var meta = 0
+        if (shiftOn) meta = meta or shiftMeta
+        if (ctrlOn) meta = meta or ctrlMeta
+        if (altOn) meta = meta or altMeta
+        return meta
+    }
+
+    private fun sendKey(ic: InputConnection, code: Int) {
+        if (code == 0) return
+        sendRaw(ic, code, currentMeta())
+        resetModifiers()
+    }
+
+    private fun sendCtrlShortcut(ic: InputConnection, code: Int) {
+        if (code == 0) return
+
+        var meta = ctrlMeta
+        if (shiftOn) meta = meta or shiftMeta
+        if (altOn) meta = meta or altMeta
+
+        if (keyMode) {
+            // Behave like a real keyboard: Ctrl down, key down/up, Ctrl up.
+            val t = SystemClock.uptimeMillis()
+            ic.sendKeyEvent(keyEvent(t, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, ctrlMeta))
+            sendRaw(ic, code, meta)
+            ic.sendKeyEvent(keyEvent(t, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0))
+        } else {
+            sendRaw(ic, code, meta)
+        }
+
+        resetModifiers()
+    }
+
+    // ENTER runs the field's action (search / send / go) when it has one.
+    private fun sendEnter(ic: InputConnection) {
+        val options = currentInputEditorInfo?.imeOptions ?: 0
+        val action = options and EditorInfo.IME_MASK_ACTION
+        val noEnterAction = (options and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
+
+        val hasAction = action != EditorInfo.IME_ACTION_NONE &&
+            action != EditorInfo.IME_ACTION_UNSPECIFIED
+
+        if (!noEnterAction && hasAction) {
+            ic.performEditorAction(action)
+            resetModifiers()
+        } else {
+            sendKey(ic, KeyEvent.KEYCODE_ENTER)
+        }
     }
 }
