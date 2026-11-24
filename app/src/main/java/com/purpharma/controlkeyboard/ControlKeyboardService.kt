@@ -286,11 +286,17 @@ class ControlKeyboardService : InputMethodService() {
             )
 
             letterButtons[key] = button
-            button.setOnClickListener {
-                buzz(it)
-                handleLetter(key)
+            if (arabicOn && arabicLetterPopups.containsKey(key)) {
+                // Preserve the existing Arabic alternate-character popup keys.
+                button.setOnClickListener {
+                    buzz(it)
+                    handleLetter(key)
+                }
+                button.setOnLongClickListener { longPressFor(button, key) }
+            } else {
+                // Ordinary letters repeat while the key is held down.
+                attachRepeatAction(button) { handleLetter(key) }
             }
-            button.setOnLongClickListener { longPressFor(button, key) }
 
             row.addView(
                 button,
@@ -464,22 +470,26 @@ class ControlKeyboardService : InputMethodService() {
         v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
     }
 
-    // Press once = one action; hold = repeats (arrows, delete, backspace).
+    // Press once = one action; holding repeats the supplied key action.
     private fun attachRepeat(button: Button, key: String) {
+        attachRepeatAction(button) { handleKey(key) }
+    }
+
+    private fun attachRepeatAction(button: Button, action: () -> Unit) {
         button.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     stopRepeat()
                     v.isPressed = true
                     buzz(v)
-                    handleKey(key)
+                    action()
                     val repeater = object : Runnable {
                         override fun run() {
                             if (!v.isPressed) {
                                 if (activeRepeat === this) activeRepeat = null
                                 return
                             }
-                            handleKey(key)
+                            action()
                             uiHandler.postDelayed(this, 60)
                         }
                     }
