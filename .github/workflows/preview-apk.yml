@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/samsung-arabic-layout
+      - feature/control-keyboard-v1.3
 
 permissions:
   contents: read
