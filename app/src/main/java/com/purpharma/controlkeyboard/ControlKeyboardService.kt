@@ -277,17 +277,15 @@ class ControlKeyboardService : InputMethodService() {
                 gravity = Gravity.CENTER
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
             }
-            listOf(left, center, right).forEach { key ->
-                if (key == null) {
-                    line.addView(Space(this), LinearLayout.LayoutParams(0, dp(30), 1f))
-                } else {
-                    val button = makeButton(key, if (key == "TAB") 12f else 16f, 30)
-                    if (key == "TAB") button.setOnClickListener { buzz(it); handleKey("TAB") }
-                    else attachRepeat(button, key)
-                    line.addView(button, LinearLayout.LayoutParams(0, dp(30), 1f).apply {
-                        setMargins(dp(2), dp(1), dp(2), dp(1))
-                    })
-                }
+            val keys = if (left == null && right == null) listOf(center)
+                else listOf(left, center, right)
+            keys.forEach { key ->
+                val button = makeButton(key ?: "", if (key == "TAB") 12f else 16f, 30)
+                if (key == "TAB") button.setOnClickListener { buzz(it); handleKey("TAB") }
+                else attachRepeat(button, key!!)
+                line.addView(button, LinearLayout.LayoutParams(0, dp(30), 1f).apply {
+                    setMargins(dp(2), dp(1), dp(2), dp(1))
+                })
             }
             cluster.addView(line, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(32)
@@ -516,7 +514,7 @@ class ControlKeyboardService : InputMethodService() {
             return
         }
         val before = currentInputConnection?.getTextBeforeCursor(100, 0)?.toString().orEmpty()
-        val parts = before.split(Regex("[\\\\s،؛؟,.!]+"))
+        val parts = before.split(Regex("[\\s،؛؟,.!]+"))
         val boundary = before.isEmpty() || before.last().isWhitespace() || before.last() in "،؛؟,.!"
         val prefix = if (boundary) "" else parts.lastOrNull().orEmpty()
         val previous = if (prefix.isBlank()) parts.lastOrNull { it.isNotBlank() }.orEmpty()
