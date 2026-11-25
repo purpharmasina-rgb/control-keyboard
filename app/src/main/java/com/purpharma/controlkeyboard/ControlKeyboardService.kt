@@ -8,6 +8,7 @@ import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.InputType
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyCharacterMap
@@ -43,6 +44,9 @@ class ControlKeyboardService : InputMethodService() {
     private var popup: PopupWindow? = null
     private var activeRepeat: Runnable? = null
     private var pendingInputAction: Runnable? = null
+    private lateinit var suggestionPanel: LinearLayout
+    private val suggestionButtons = mutableListOf<Button>()
+    private val suggestionEngine by lazy { OfflineSuggestionEngine(this) }
 
     private val modifierButtons = mutableMapOf<String, Button>()
     private val letterButtons = mutableMapOf<String, Button>()
@@ -155,9 +159,26 @@ class ControlKeyboardService : InputMethodService() {
             orientation = LinearLayout.VERTICAL
         }
 
+        suggestionPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            visibility = View.GONE
+        }
+        repeat(3) {
+            val suggestion = makeButton("", 15f, 34)
+            suggestion.visibility = View.GONE
+            suggestion.setOnClickListener { applySuggestion(suggestion.text.toString()) }
+            suggestionButtons.add(suggestion)
+            suggestionPanel.addView(suggestion, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            })
+        }
+
         letterRowsPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
+        lettersPanel.addView(suggestionPanel)
         lettersPanel.addView(letterRowsPanel)
         rebuildLetterRows()
         addControlRow(lettersPanel, listOf("123", ",", "SPACE", ".", "ENTER"))
@@ -441,6 +462,7 @@ class ControlKeyboardService : InputMethodService() {
         languageButton?.text = if (arabicOn) "EN" else "عربي"
         symbolPageButton?.text = "${symbolPage + 1}/4"
         allButton?.text = if (forceKeyMode) "ALL*" else "ALL"
+        updateSuggestionBar()
 
         if (::lettersPanel.isInitialized && ::numbersPanel.isInitialized) {
             lettersPanel.visibility =
@@ -479,6 +501,60 @@ class ControlKeyboardService : InputMethodService() {
         }
     }
 
+    private fun updateSuggestionBar() {
+        if (!::suggestionPanel.isInitialized) return
+        val type = currentInputEditorInfo?.inputType ?: run { suggestionPanel.visibility = View.GONE; return }
+        val inputClass = type and InputType.TYPE_MASK_CLASS
+        val variation = type and InputType.TYPE_MASK_VARIATION
+        val password = inputClass == InputType.TYPE_CLASS_TEXT && variation in setOf(
+            InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+        )
+        if (password || inputClass != InputType.TYPE_CLASS_TEXT) {
+            suggestionPanel.visibility = View.GONE
+            return
+        }
+        val before = currentInputConnection?.getTextBeforeCursor(100, 0)?.toString().orEmpty()
+        val parts = before.split(Regex("[\\\\s،؛؟,.!]+"))
+        val boundary = before.isEmpty() || before.last().isWhitespace() || before.last() in "،؛؟,.!"
+        val prefix = if (boundary) "" else parts.lastOrNull().orEmpty()
+        val previous = if (prefix.isBlank()) parts.lastOrNull { it.isNotBlank() }.orEmpty()
+            else parts.getOrNull(parts.lastIndex - 1).orEmpty()
+        val choices = suggestionEngine.suggestions(prefix, previous)
+        if (choices.isEmpty()) { suggestionPanel.visibility = View.GONE; return }
+        suggestionButtons.forEachIndexed { index, button ->
+            val choice = choices.getOrNull(index)
+            button.visibility = if (choice == null) View.INVISIBLE else View.VISIBLE
+            button.text = choice ?: ""
+        }
+        suggestionPanel.visibility = View.VISIBLE
+    }
+
+    private fun applySuggestion(word: String) {
+        if (word.isBlank()) return
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(100, 0)?.toString().orEmpty()
+        val boundary = before.isEmpty() || before.last().isWhitespace() || before.last() in "،؛؟,.!"
+        val current = if (boundary) "" else before.split(Regex("[\\\\s،؛؟,.!]+" )).lastOrNull().orEmpty()
+        if (current.isNotEmpty()) ic.deleteSurroundingText(current.length, 0)
+        ic.commitText(if (boundary) word + " " else word, 1)
+        buzz(suggestionPanel)
+        updateSuggestionBar()
+    }
+
+    private fun learnBeforeDelimiter(ic: InputConnection) {
+        val before = ic.getTextBeforeCursor(120, 0)?.toString().orEmpty()
+        suggestionEngine.learnSentenceContext(before)
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        updateSuggestionBar()
+    }
     // ---------------------------------------------------------------- touch helpers
 
     private fun buzz(v: View) {
@@ -738,6 +814,7 @@ class ControlKeyboardService : InputMethodService() {
             "ENTER" -> sendEnter(ic)
 
             "SPACE" -> {
+                learnBeforeDelimiter(ic)
                 ic.commitText(" ", 1)
                 shiftOn = false
             }
