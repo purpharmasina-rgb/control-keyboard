@@ -147,7 +147,7 @@ class ControlKeyboardService : InputMethodService() {
         }
 
         addControlRow(root, listOf("ESC", "SHIFT", "ALT", "CTRL"))
-        addControlRow(root, listOf("HOME", "END", "DEL", "←", "→"))
+        addControlRow(root, listOf("HOME", "END", "DEL"))
         addArrowLanguageRow(root)
         addControlRow(root, listOf("LINE", "ALL", "COPY", "CUT", "PASTE", "REPL", "CLR"))
 
@@ -238,31 +238,46 @@ class ControlKeyboardService : InputMethodService() {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
-        listOf("LANG", "TAB").forEach { key ->
-            val button = makeButton(key, 12f, 38)
-            if (key == "LANG") languageButton = button
-            button.setOnClickListener {
-                buzz(it)
-                handleKey(key)
+        val lang = makeButton("عربي", 12f, 90)
+        languageButton = lang
+        lang.setOnClickListener { buzz(it); handleKey("LANG") }
+        row.addView(lang, LinearLayout.LayoutParams(0, dp(96), 1f).apply {
+            setMargins(dp(2), dp(2), dp(2), dp(2))
+        })
+
+        val cluster = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+        }
+        fun clusterRow(left: String?, center: String?, right: String?) {
+            val line = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
             }
-            row.addView(button, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
-                setMargins(dp(2), dp(2), dp(2), dp(2))
-            })
+            listOf(left, center, right).forEach { key ->
+                if (key == null) {
+                    line.addView(Space(this), LinearLayout.LayoutParams(0, dp(30), 1f))
+                } else {
+                    val button = makeButton(key, if (key == "TAB") 12f else 16f, 30)
+                    if (key == "TAB") button.setOnClickListener { buzz(it); handleKey("TAB") }
+                    else attachRepeat(button, key)
+                    line.addView(button, LinearLayout.LayoutParams(0, dp(30), 1f).apply {
+                        setMargins(dp(2), dp(1), dp(2), dp(1))
+                    })
+                }
+            }
+            cluster.addView(line, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(32)
+            ))
         }
-
-        row.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
-
-        listOf("↑", "↓").forEach { key ->
-            val button = makeButton(key, 12f, 38)
-            attachRepeat(button, key)
-            row.addView(button, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
-                setMargins(dp(2), dp(2), dp(2), dp(2))
-            })
-        }
-
+        clusterRow(null, "↑", null)
+        clusterRow("←", "TAB", "→")
+        clusterRow(null, "↓", null)
+        row.addView(cluster, LinearLayout.LayoutParams(0, dp(96), 3f))
         root.addView(row)
     }
-
     private fun addLetterRow(
         root: LinearLayout,
         keys: List<String>,
