@@ -1,6 +1,7 @@
 package com.purpharma.controlkeyboard
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
@@ -14,6 +15,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var enableButton: Button
     private lateinit var defaultButton: Button
+    private lateinit var clearLearnedButton: Button
 
     private fun imeComponent() = ComponentName(this, ControlKeyboardService::class.java)
 
@@ -60,11 +62,26 @@ class MainActivity : Activity() {
                 imm.showInputMethodPicker()
             }
         }
+        clearLearnedButton = Button(this).apply {
+            text = "مسح الكلمات المتعلمة"
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("مسح الكلمات المتعلمة")
+                    .setMessage("سيتم حذف الكلمات والسياقات التي تعلمتها لوحة المفاتيح من هذا الجهاز. لن تتأثر الكلمات الأساسية أو إعدادات الكيبورد.")
+                    .setNegativeButton("إلغاء", null)
+                    .setPositiveButton("مسح") { _, _ ->
+                        OfflineSuggestionEngine(this@MainActivity).clearLearned()
+                        status.text = "تم مسح الكلمات المتعلمة من هذا الجهاز."
+                    }
+                    .show()
+            }
+        }
 
         root.addView(title)
         root.addView(status)
         root.addView(enableButton)
         root.addView(defaultButton)
+        root.addView(clearLearnedButton)
         setContentView(root)
         refreshSetup()
     }
