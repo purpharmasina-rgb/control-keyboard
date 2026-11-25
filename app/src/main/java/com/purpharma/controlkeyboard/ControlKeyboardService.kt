@@ -26,6 +26,7 @@ import android.widget.Space
 class ControlKeyboardService : InputMethodService() {
 
     private var shiftOn = false
+    private var capsLock = false
     private var ctrlOn = false
     private var altOn = false
     private var arabicOn = false
@@ -44,6 +45,8 @@ class ControlKeyboardService : InputMethodService() {
     private var popup: PopupWindow? = null
     private var activeRepeat: Runnable? = null
     private var pendingInputAction: Runnable? = null
+    private var suggestionUpdateRunnable: Runnable? = null
+    private var lastLearnedFingerprint: String? = null
     private lateinit var suggestionPanel: LinearLayout
     private val suggestionButtons = mutableListOf<Button>()
     private val suggestionEngine by lazy { OfflineSuggestionEngine(this) }
@@ -122,6 +125,7 @@ class ControlKeyboardService : InputMethodService() {
         stopRepeat()
         cancelPendingInputAction()
         browserMode = (info?.packageName ?: "") in browserPackages
+        lastLearnedFingerprint = null
         dismissPopup()
         updateKeyboard()
     }
@@ -143,6 +147,7 @@ class ControlKeyboardService : InputMethodService() {
     override fun onCreateInputView(): View {
         modifierButtons.clear()
         letterButtons.clear()
+        suggestionButtons.clear()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -163,11 +168,11 @@ class ControlKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             layoutDirection = View.LAYOUT_DIRECTION_LTR
-            visibility = View.GONE
+            visibility = View.INVISIBLE
         }
         repeat(3) {
             val suggestion = makeButton("", 15f, 34)
-            suggestion.visibility = View.GONE
+            suggestion.visibility = View.INVISIBLE
             suggestion.setOnClickListener { applySuggestion(suggestion.text.toString()) }
             suggestionButtons.add(suggestion)
             suggestionPanel.addView(suggestion, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
@@ -444,7 +449,7 @@ class ControlKeyboardService : InputMethodService() {
         modifierButtons.forEach { (key, button) ->
             val active = when (key) {
                 "CTRL" -> ctrlOn
-                "SHIFT" -> shiftOn
+                "SHIFT" -> shiftOn || capsLock
                 "ALT" -> altOn
                 else -> false
             }
@@ -460,7 +465,7 @@ class ControlKeyboardService : InputMethodService() {
         languageButton?.text = if (arabicOn) "EN" else "عربي"
         symbolPageButton?.text = "${symbolPage + 1}/4"
         allButton?.text = if (forceKeyMode) "ALL*" else "ALL"
-        updateSuggestionBar()
+        scheduleSuggestionBarUpdate()
 
         if (::lettersPanel.isInitialized && ::numbersPanel.isInitialized) {
             lettersPanel.visibility =
@@ -499,28 +504,67 @@ class ControlKeyboardService : InputMethodService() {
         }
     }
 
+    private fun isPersonalizedInputAllowed(): Boolean {
+        val info = currentInputEditorInfo ?: return false
+        val type = info.inputType
+        if ((type and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
+        val variation = type and InputType.TYPE_MASK_VARIATION
+        if (variation in setOf(
+                InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+                InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
+                InputType.TYPE_TEXT_VARIATION_URI
+            )) return false
+        if ((info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return false
+
+        val packageName = info.packageName.orEmpty().lowercase()
+        if (packageName in browserPackages) return false
+        if (packageName.startsWith("com.termux") ||
+            packageName.contains("terminal") ||
+            packageName.contains("codeeditor") ||
+            packageName.contains("code_editor") ||
+            packageName.contains(".ide") ||
+            packageName in setOf("com.foxdebug.acode", "com.aide.ui", "com.rhmsoft.code")) return false
+        return true
+    }
+
+    private fun scheduleSuggestionBarUpdate() {
+        if (!::suggestionPanel.isInitialized) return
+        suggestionUpdateRunnable?.let { uiHandler.removeCallbacks(it) }
+        val task = Runnable {
+            suggestionUpdateRunnable = null
+            updateSuggestionBar()
+        }
+        suggestionUpdateRunnable = task
+        uiHandler.postDelayed(task, 65)
+    }
+
+    private fun hideSuggestionChoices() {
+        if (!::suggestionPanel.isInitialized) return
+        suggestionButtons.forEach { it.visibility = View.INVISIBLE }
+        suggestionPanel.visibility = View.INVISIBLE
+    }
+
     private fun updateSuggestionBar() {
         if (!::suggestionPanel.isInitialized) return
-        val type = currentInputEditorInfo?.inputType ?: run { suggestionPanel.visibility = View.GONE; return }
-        val inputClass = type and InputType.TYPE_MASK_CLASS
-        val variation = type and InputType.TYPE_MASK_VARIATION
-        val password = inputClass == InputType.TYPE_CLASS_TEXT && variation in setOf(
-            InputType.TYPE_TEXT_VARIATION_PASSWORD,
-            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
-            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-        )
-        if (password || inputClass != InputType.TYPE_CLASS_TEXT) {
-            suggestionPanel.visibility = View.GONE
+        if (!isPersonalizedInputAllowed()) {
+            hideSuggestionChoices()
             return
         }
-        val before = currentInputConnection?.getTextBeforeCursor(100, 0)?.toString().orEmpty()
+        val ic = currentInputConnection ?: run { hideSuggestionChoices(); return }
+        val before = ic.getTextBeforeCursor(100, 0)?.toString().orEmpty()
         val parts = before.split(Regex("[\\s،؛؟,.!]+"))
         val boundary = before.isEmpty() || before.last().isWhitespace() || before.last() in "،؛؟,.!"
         val prefix = if (boundary) "" else parts.lastOrNull().orEmpty()
         val previous = if (prefix.isBlank()) parts.lastOrNull { it.isNotBlank() }.orEmpty()
             else parts.getOrNull(parts.lastIndex - 1).orEmpty()
         val choices = suggestionEngine.suggestions(prefix, previous)
-        if (choices.isEmpty()) { suggestionPanel.visibility = View.GONE; return }
+        if (choices.isEmpty()) {
+            hideSuggestionChoices()
+            return
+        }
         suggestionButtons.forEachIndexed { index, button ->
             val choice = choices.getOrNull(index)
             button.visibility = if (choice == null) View.INVISIBLE else View.VISIBLE
@@ -529,21 +573,32 @@ class ControlKeyboardService : InputMethodService() {
         suggestionPanel.visibility = View.VISIBLE
     }
 
+    private fun learningFingerprint(text: String): String =
+        text.trim().split(Regex("[\\s،؛؟,.!;:]+")).filter { it.isNotBlank() }.joinToString(" ")
+
+    private fun learnBeforeDelimiter(ic: InputConnection) {
+        if (!isPersonalizedInputAllowed()) return
+        val before = ic.getTextBeforeCursor(120, 0)?.toString().orEmpty()
+        val fingerprint = learningFingerprint(before)
+        if (fingerprint.isBlank() || fingerprint == lastLearnedFingerprint) return
+        suggestionEngine.learnSentenceContext(before)
+        lastLearnedFingerprint = fingerprint
+    }
+
     private fun applySuggestion(word: String) {
-        if (word.isBlank()) return
+        if (word.isBlank() || !isPersonalizedInputAllowed()) return
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(100, 0)?.toString().orEmpty()
         val boundary = before.isEmpty() || before.last().isWhitespace() || before.last() in "،؛؟,.!"
         val current = if (boundary) "" else before.split(Regex("[\\s،؛؟,.!]+")).lastOrNull().orEmpty()
+        val completedContext = if (current.isEmpty()) before + word
+            else before.dropLast(current.length) + word
         if (current.isNotEmpty()) ic.deleteSurroundingText(current.length, 0)
         ic.commitText(if (boundary) word + " " else word, 1)
+        suggestionEngine.learnSentenceContext(completedContext)
+        lastLearnedFingerprint = learningFingerprint(completedContext)
         buzz(suggestionPanel)
-        updateSuggestionBar()
-    }
-
-    private fun learnBeforeDelimiter(ic: InputConnection) {
-        val before = ic.getTextBeforeCursor(120, 0)?.toString().orEmpty()
-        suggestionEngine.learnSentenceContext(before)
+        scheduleSuggestionBarUpdate()
     }
 
     override fun onUpdateSelection(
@@ -551,7 +606,7 @@ class ControlKeyboardService : InputMethodService() {
         candidatesStart: Int, candidatesEnd: Int
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        updateSuggestionBar()
+        scheduleSuggestionBarUpdate()
     }
     // ---------------------------------------------------------------- touch helpers
 
@@ -728,12 +783,22 @@ class ControlKeyboardService : InputMethodService() {
         val value = if (arabicOn) {
             arabic[key] ?: key
         } else {
-            if (shiftOn) key else key.lowercase()
+            val autoCap = shouldAutoCapitalize(ic)
+            if (shiftOn || capsLock || autoCap) key else key.lowercase()
         }
 
         ic.commitText(value, 1)
         shiftOn = false
         updateKeyboard()
+    }
+
+    private fun shouldAutoCapitalize(ic: InputConnection): Boolean {
+        val info = currentInputEditorInfo ?: return false
+        val type = info.inputType
+        if ((type and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
+        if ((type and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) == 0) return false
+        val before = ic.getTextBeforeCursor(80, 0)?.toString().orEmpty()
+        return before.isBlank() || Regex("[.!?؟][\\\\s]*$").containsMatchIn(before)
     }
 
     private fun letterKeyCode(key: String): Int {
@@ -781,7 +846,17 @@ class ControlKeyboardService : InputMethodService() {
 
         when (key) {
             "CTRL" -> ctrlOn = !ctrlOn
-            "SHIFT" -> shiftOn = !shiftOn
+            "SHIFT" -> {
+                if (capsLock) {
+                    capsLock = false
+                    shiftOn = false
+                } else if (shiftOn) {
+                    capsLock = true
+                    shiftOn = false
+                } else {
+                    shiftOn = true
+                }
+            }
             "ALT" -> altOn = !altOn
 
             "LANG" -> {
@@ -809,7 +884,10 @@ class ControlKeyboardService : InputMethodService() {
 
             "TAB" -> sendKey(ic, KeyEvent.KEYCODE_TAB)
             "ESC" -> sendKey(ic, KeyEvent.KEYCODE_ESCAPE)
-            "ENTER" -> sendEnter(ic)
+            "ENTER" -> {
+                learnBeforeDelimiter(ic)
+                sendEnter(ic)
+            }
 
             "SPACE" -> {
                 learnBeforeDelimiter(ic)
@@ -825,16 +903,17 @@ class ControlKeyboardService : InputMethodService() {
             "REPL" -> replaceAll()
             "CLR" -> clearAll()
 
-            "," -> ic.commitText(",", 1)
-            "." -> ic.commitText(".", 1)
+            "," -> { learnBeforeDelimiter(ic); ic.commitText(",", 1) }
+            "." -> { learnBeforeDelimiter(ic); ic.commitText(".", 1) }
             "-" -> ic.commitText("-", 1)
             "/" -> ic.commitText("/", 1)
-            ":" -> ic.commitText(":", 1)
+            ":" -> { learnBeforeDelimiter(ic); ic.commitText(":", 1) }
             "?", "!", "@", "#", "$", "%", "&", "*", "+", "=", "(", ")",
             "\\", "_", "\"", "'", "[", "]", "{", "}", "<", ">", "|", "~", "^", "€" ->
                 ic.commitText(key, 1)
 
             in "0".."9" -> ic.commitText(key, 1)
+            else -> if (key.length == 1) ic.commitText(key, 1)
         }
 
         updateKeyboard()
