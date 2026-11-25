@@ -1,5 +1,6 @@
 package com.purpharma.controlkeyboard
 
+import android.content.ClipboardManager
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -48,6 +49,13 @@ class ControlKeyboardService : InputMethodService() {
     private var suggestionUpdateRunnable: Runnable? = null
     private var lastLearnedFingerprint: String? = null
     private lateinit var suggestionPanel: LinearLayout
+    private lateinit var clipboardPanel: LinearLayout
+    private var clipboardChip: Button? = null
+    private var clipboardListenerRegistered = false
+    private val clipboardManager by lazy { getSystemService(CLIPBOARD_SERVICE) as ClipboardManager }
+    private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+        uiHandler.post { refreshClipboardChip() }
+    }
     private val suggestionButtons = mutableListOf<Button>()
     private val suggestionEngine by lazy { OfflineSuggestionEngine(this) }
 
@@ -128,6 +136,7 @@ class ControlKeyboardService : InputMethodService() {
         cancelPendingInputAction()
         browserMode = (info?.packageName ?: "") in browserPackages
         lastLearnedFingerprint = null
+        registerClipboardListener()
         dismissPopup()
         updateKeyboard()
     }
@@ -136,6 +145,7 @@ class ControlKeyboardService : InputMethodService() {
         stopRepeat()
         cancelPendingInputAction()
         cancelSuggestionUpdate()
+        unregisterClipboardListener()
         dismissPopup()
         super.onFinishInputView(finishingInput)
     }
@@ -144,6 +154,7 @@ class ControlKeyboardService : InputMethodService() {
         stopRepeat()
         cancelPendingInputAction()
         cancelSuggestionUpdate()
+        unregisterClipboardListener()
         dismissPopup()
         super.onWindowHidden()
     }
@@ -168,6 +179,19 @@ class ControlKeyboardService : InputMethodService() {
             orientation = LinearLayout.VERTICAL
         }
 
+        clipboardPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            visibility = View.INVISIBLE
+        }
+        clipboardChip = makeButton("", 13f, 34).apply {
+            setOnClickListener { insertClipboardText() }
+        }
+        clipboardPanel.addView(clipboardChip, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(34)
+        ).apply { setMargins(dp(2), dp(1), dp(2), dp(1)) })
+
         suggestionPanel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -187,6 +211,9 @@ class ControlKeyboardService : InputMethodService() {
         letterRowsPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
+        lettersPanel.addView(clipboardPanel, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(36)
+        ))
         lettersPanel.addView(suggestionPanel)
         lettersPanel.addView(letterRowsPanel)
         rebuildLetterRows()
@@ -468,6 +495,7 @@ class ControlKeyboardService : InputMethodService() {
         symbolPageButton?.text = "${symbolPage + 1}/4"
         allButton?.text = if (forceKeyMode) "ALL*" else "ALL"
         scheduleSuggestionBarUpdate()
+        refreshClipboardChip()
 
         if (::lettersPanel.isInitialized && ::numbersPanel.isInitialized) {
             lettersPanel.visibility =
@@ -531,6 +559,64 @@ class ControlKeyboardService : InputMethodService() {
             packageName.contains(".ide") ||
             packageName in setOf("com.foxdebug.acode", "com.aide.ui", "com.rhmsoft.code")) return false
         return true
+    }
+
+    private fun registerClipboardListener() {
+        if (clipboardListenerRegistered) return
+        try {
+            clipboardManager.addPrimaryClipChangedListener(clipboardListener)
+            clipboardListenerRegistered = true
+        } catch (_: Exception) {
+            clipboardListenerRegistered = false
+        }
+        refreshClipboardChip()
+    }
+
+    private fun unregisterClipboardListener() {
+        if (!clipboardListenerRegistered) return
+        try {
+            clipboardManager.removePrimaryClipChangedListener(clipboardListener)
+        } catch (_: Exception) {
+        }
+        clipboardListenerRegistered = false
+    }
+
+    private fun currentClipboardText(): String? {
+        if (!isPersonalizedInputAllowed()) return null
+        return try {
+            val clip = clipboardManager.primaryClip ?: return null
+            if (clip.itemCount == 0) return null
+            val item = clip.getItemAt(0)
+            val text = item.coerceToText(this)?.toString()?.trim().orEmpty()
+            if (text.isBlank()) null else text
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun refreshClipboardChip() {
+        if (!::clipboardPanel.isInitialized) return
+        val text = currentClipboardText()
+        val chip = clipboardChip ?: return
+        if (text == null) {
+            chip.text = ""
+            chip.contentDescription = null
+            clipboardPanel.visibility = View.INVISIBLE
+            return
+        }
+        val preview = text.replace(Regex("\\s+"), " ").take(48)
+        chip.text = "📋  $preview"
+        chip.contentDescription = "إدراج النص المنسوخ: $preview"
+        clipboardPanel.visibility = View.VISIBLE
+    }
+
+    private fun insertClipboardText() {
+        val text = currentClipboardText() ?: return
+        val ic = currentInputConnection ?: return
+        buzz(clipboardChip ?: return)
+        ic.commitText(text, 1)
+        refreshClipboardChip()
+        scheduleSuggestionBarUpdate()
     }
 
     private fun cancelSuggestionUpdate() {
