@@ -223,7 +223,6 @@ class ControlKeyboardService : InputMethodService() {
                 modifierButtons[key] = button
             }
             if (key == "SHIFT") topShiftButton = button
-            if (key == "LANG") languageButton = button
             if (key == "PAGE") symbolPageButton = button
             if (key == "ALL") allButton = button
 
@@ -245,7 +244,6 @@ class ControlKeyboardService : InputMethodService() {
 
             val keyWeight = when {
                 key == "SPACE" -> 2.5f
-                !arabicOn && key == "X" -> 1.2f
                 else -> 1f
             }
             row.addView(
