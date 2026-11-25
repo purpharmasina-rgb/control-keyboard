@@ -14,6 +14,26 @@ class OfflineSuggestionEngine(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("offline_suggestions", Context.MODE_PRIVATE)
 
+    private val seedNextWords = mapOf(
+        "صباح" to listOf("الخير"),
+        "مساء" to listOf("الخير", "النور"),
+        "السلام" to listOf("عليكم"),
+        "ازيك" to listOf("عامل", "عاملة"),
+        "عامل" to listOf("ايه"),
+        "انا" to listOf("عايز", "عاوز", "محتاج"),
+        "عايز" to listOf("اعرف", "اشتري", "اسأل"),
+        "محتاج" to listOf("مساعدة", "اعرف"),
+        "شكرا" to listOf("جدا"),
+        "على" to listOf("فكرة", "الطول"),
+        "how" to listOf("are"),
+        "are" to listOf("you"),
+        "good" to listOf("morning", "to"),
+        "thank" to listOf("you"),
+        "i" to listOf("am", "need"),
+        "can" to listOf("you"),
+        "see" to listOf("you")
+    )
+
     private val seedWords = (
         "انا انت انتي احنا هو هي هم ده دي دول اللي اللى على علي في فى من الى الى مع مش كان كانت يكون "
         + "عايز عاوز عايزة ممكن لو طيب تمام شكرا شكراً معلش ازيك عامل اخبار ايه ايه ليه امتى فين "
@@ -43,11 +63,16 @@ class OfflineSuggestionEngine(context: Context) {
             }.toMap()
 
     private fun bigramCounts(previous: String): Map<String, Int> {
-        val prefix = "b:${normalize(previous)}|"
-        return prefs.all.filter { it.key.startsWith(prefix) }
+        val normalized = normalize(previous)
+        val prefix = "b:$normalized|"
+        val learned = prefs.all.filter { it.key.startsWith(prefix) }
             .mapNotNull { (key, value) ->
                 if (value is Int) key.removePrefix(prefix) to value else null
             }.toMap()
+        val seeded = seedNextWords[normalized].orEmpty().associateWith { 2 }
+        return seeded + learned.mapValues { (word, count) ->
+            count + (seeded[word] ?: 0)
+        }
     }
 
     fun suggestions(prefix: String, previousWord: String, limit: Int = 3): List<String> {
