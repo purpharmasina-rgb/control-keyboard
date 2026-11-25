@@ -73,6 +73,8 @@ class ControlKeyboardService : InputMethodService() {
     private val altMeta = KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
 
     private val repeatKeys = setOf("←", "→", "↑", "↓", "BACK", "DEL")
+    private val suggestionTokenSplit = Regex("""[\s،؛؟,.!]+""")
+    private val learningTokenSplit = Regex("""[\s،؛؟,.!;:]+""")
 
     private val browserPackages = setOf(
         "com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary",
@@ -133,6 +135,7 @@ class ControlKeyboardService : InputMethodService() {
     override fun onFinishInputView(finishingInput: Boolean) {
         stopRepeat()
         cancelPendingInputAction()
+        cancelSuggestionUpdate()
         dismissPopup()
         super.onFinishInputView(finishingInput)
     }
@@ -140,6 +143,7 @@ class ControlKeyboardService : InputMethodService() {
     override fun onWindowHidden() {
         stopRepeat()
         cancelPendingInputAction()
+        cancelSuggestionUpdate()
         dismissPopup()
         super.onWindowHidden()
     }
@@ -531,6 +535,11 @@ class ControlKeyboardService : InputMethodService() {
         return true
     }
 
+    private fun cancelSuggestionUpdate() {
+        suggestionUpdateRunnable?.let { uiHandler.removeCallbacks(it) }
+        suggestionUpdateRunnable = null
+    }
+
     private fun scheduleSuggestionBarUpdate() {
         if (!::suggestionPanel.isInitialized) return
         suggestionUpdateRunnable?.let { uiHandler.removeCallbacks(it) }
@@ -556,7 +565,7 @@ class ControlKeyboardService : InputMethodService() {
         }
         val ic = currentInputConnection ?: run { hideSuggestionChoices(); return }
         val before = ic.getTextBeforeCursor(100, 0)?.toString().orEmpty()
-        val parts = before.split(Regex("[\\s،؛؟,.!]+"))
+        val parts = before.split(suggestionTokenSplit)
         val boundary = before.isEmpty() || before.last().isWhitespace() || before.last() in "،؛؟,.!"
         val prefix = if (boundary) "" else parts.lastOrNull().orEmpty()
         val previous = if (prefix.isBlank()) parts.lastOrNull { it.isNotBlank() }.orEmpty()
@@ -575,7 +584,7 @@ class ControlKeyboardService : InputMethodService() {
     }
 
     private fun learningFingerprint(text: String): String =
-        text.trim().split(Regex("[\\s،؛؟,.!;:]+")).filter { it.isNotBlank() }.joinToString(" ")
+        text.trim().split(learningTokenSplit).filter { it.isNotBlank() }.joinToString(" ")
 
     private fun learnBeforeDelimiter(ic: InputConnection) {
         if (!isPersonalizedInputAllowed()) return
@@ -803,7 +812,8 @@ class ControlKeyboardService : InputMethodService() {
         if ((type and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
         if ((type and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) == 0) return false
         val before = ic.getTextBeforeCursor(80, 0)?.toString().orEmpty()
-        return before.isBlank() || Regex("[.!?؟][\\\\s]*$").containsMatchIn(before)
+        val last = before.trimEnd().lastOrNull()
+        return before.isBlank() || (last != null && last in charArrayOf('.', '!', '?', '؟', '\n'))
     }
 
     private fun letterKeyCode(key: String): Int {
