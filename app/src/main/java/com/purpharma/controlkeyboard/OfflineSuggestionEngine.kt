@@ -65,8 +65,9 @@ class OfflineSuggestionEngine(context: Context) {
             bigrams[seeded] = (bigrams[seeded] ?: 0) + 2
         }
 
-        val all = (normalizedSeedWords.values + learned.keys + bigrams.keys)
-            .distinctBy(::normalize)
+        val candidates = normalizedSeedWords.toMutableMap()
+        learned.keys.forEach { candidates.putIfAbsent(normalize(it), it) }
+        bigrams.keys.forEach { candidates.putIfAbsent(normalize(it), it) }
         if (prefix.isBlank()) {
             val contextual = bigrams.entries.sortedByDescending { it.value }.map { it.key }
             val frequent = learned.entries.sortedByDescending { it.value }.map { it.key }
@@ -74,8 +75,7 @@ class OfflineSuggestionEngine(context: Context) {
         }
 
         val target = normalize(prefix)
-        val ranked = all.mapNotNull { word ->
-            val normalized = normalize(word)
+        val ranked = candidates.entries.mapNotNull { (normalized, word) ->
             val learnedScore = learned[word] ?: learned[normalized] ?: 0
             val contextScore = bigrams[word] ?: bigrams[normalized] ?: 0
             val prefixMatch = normalized.startsWith(target)
@@ -91,11 +91,11 @@ class OfflineSuggestionEngine(context: Context) {
     }
 
     fun learnSentenceContext(textBeforeCursor: String) {
-        val tokens = textBeforeCursor.trim().split(WORD_SPLIT)
-            .filter { it.isNotBlank() && isLearnable(it) }
+        val tokens = textBeforeCursor.trim().split(WORD_SPLIT).filter { it.isNotBlank() }
         if (tokens.isEmpty()) return
         val current = tokens.last()
-        val previous = tokens.getOrNull(tokens.lastIndex - 1)
+        if (!isLearnable(current)) return
+        val previous = tokens.getOrNull(tokens.lastIndex - 1)?.takeIf(::isLearnable)
         val editor = prefs.edit()
         val wordKey = "w:$current"
         editor.putInt(wordKey, (prefs.getInt(wordKey, 0) + 1).coerceAtMost(500))
