@@ -534,7 +534,7 @@ class ControlKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(100, 0)?.toString().orEmpty()
         val boundary = before.isEmpty() || before.last().isWhitespace() || before.last() in "،؛؟,.!"
-        val current = if (boundary) "" else before.split(Regex("[\\\\s،؛؟,.!]+" )).lastOrNull().orEmpty()
+        val current = if (boundary) "" else before.split(Regex("[\\s،؛؟,.!]+")).lastOrNull().orEmpty()
         if (current.isNotEmpty()) ic.deleteSurroundingText(current.length, 0)
         ic.commitText(if (boundary) word + " " else word, 1)
         buzz(suggestionPanel)
