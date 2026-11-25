@@ -55,8 +55,9 @@ class OfflineSuggestionEngine(context: Context) {
         val bigrams = if (previousWord.isNotBlank()) bigramCounts(previousWord) else emptyMap()
         val all = (seedWords + learned.keys + bigrams.keys).distinct()
         if (prefix.isBlank()) {
-            return bigrams.entries.sortedByDescending { it.value }
-                .map { it.key }.distinct().take(limit)
+            val contextual = bigrams.entries.sortedByDescending { it.value }.map { it.key }
+            val frequent = learned.entries.sortedByDescending { it.value }.map { it.key }
+            return (contextual + frequent).distinct().take(limit)
         }
 
         val target = normalize(prefix)
