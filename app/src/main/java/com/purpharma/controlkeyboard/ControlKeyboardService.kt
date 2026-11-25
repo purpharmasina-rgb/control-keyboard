@@ -348,10 +348,24 @@ class ControlKeyboardService : InputMethodService() {
 
         keys.forEach { key ->
             val button = makeButton(
-                if (arabicOn) arabic[key] ?: key else key,
-                19f,
+                if (key == "CAPS") "CAPS" else if (arabicOn) arabic[key] ?: key else key,
+                if (key == "CAPS") 12f else 19f,
                 48
             )
+
+            if (key == "CAPS") {
+                modifierButtons["CAPS"] = button
+                button.setOnClickListener {
+                    buzz(it)
+                    capsLock = !capsLock
+                    shiftOn = false
+                    updateKeyboard()
+                }
+                row.addView(button, LinearLayout.LayoutParams(0, dp(48), 1.2f).apply {
+                    setMargins(dp(1), dp(2), dp(1), dp(2))
+                })
+                return@forEach
+            }
 
             letterButtons[key] = button
             if (arabicOn && arabicLetterPopups.containsKey(key)) {
@@ -480,6 +494,7 @@ class ControlKeyboardService : InputMethodService() {
                 "CTRL" -> ctrlOn
                 "SHIFT" -> shiftOn || capsLock
                 "ALT" -> altOn
+                "CAPS" -> capsLock
                 else -> false
             }
 
@@ -524,7 +539,7 @@ class ControlKeyboardService : InputMethodService() {
             )
             addLetterRow(
                 letterRowsPanel,
-                listOf("A", "S", "D", "F", "G", "H", "J", "K", "L")
+                listOf("CAPS", "A", "S", "D", "F", "G", "H", "J", "K", "L")
             )
             addLetterRow(
                 letterRowsPanel,
@@ -957,6 +972,10 @@ class ControlKeyboardService : InputMethodService() {
                 }
             }
             "ALT" -> altOn = !altOn
+            "CAPS" -> {
+                capsLock = !capsLock
+                shiftOn = false
+            }
 
             "LANG" -> {
                 dismissPopup()
