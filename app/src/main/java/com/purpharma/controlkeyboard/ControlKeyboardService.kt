@@ -515,7 +515,8 @@ class ControlKeyboardService : InputMethodService() {
                 InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
                 InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
                 InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
-                InputType.TYPE_TEXT_VARIATION_URI
+                InputType.TYPE_TEXT_VARIATION_URI,
+                InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS
             )) return false
         if ((info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return false
 
@@ -734,6 +735,9 @@ class ControlKeyboardService : InputMethodService() {
             }
             b.setOnClickListener {
                 buzz(it)
+                if (item in setOf("؟", "!", "،", "؛", ".", ",", ":", "…")) {
+                    currentInputConnection?.let { ic -> learnBeforeDelimiter(ic) }
+                }
                 currentInputConnection?.commitText(item, 1)
                 shiftOn = false
                 dismissPopup()
@@ -783,7 +787,7 @@ class ControlKeyboardService : InputMethodService() {
         val value = if (arabicOn) {
             arabic[key] ?: key
         } else {
-            val autoCap = shouldAutoCapitalize(ic)
+            val autoCap = !shiftOn && !capsLock && shouldAutoCapitalize(ic)
             if (shiftOn || capsLock || autoCap) key else key.lowercase()
         }
 
@@ -793,6 +797,7 @@ class ControlKeyboardService : InputMethodService() {
     }
 
     private fun shouldAutoCapitalize(ic: InputConnection): Boolean {
+        if (!isPersonalizedInputAllowed()) return false
         val info = currentInputEditorInfo ?: return false
         val type = info.inputType
         if ((type and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
@@ -908,9 +913,11 @@ class ControlKeyboardService : InputMethodService() {
             "-" -> ic.commitText("-", 1)
             "/" -> ic.commitText("/", 1)
             ":" -> { learnBeforeDelimiter(ic); ic.commitText(":", 1) }
-            "?", "!", "@", "#", "$", "%", "&", "*", "+", "=", "(", ")",
-            "\\", "_", "\"", "'", "[", "]", "{", "}", "<", ">", "|", "~", "^", "€" ->
+            "?", "!", ";", "@", "#", "$", "%", "&", "*", "+", "=", "(", ")",
+            "\\", "_", "\"", "'", "[", "]", "{", "}", "<", ">", "|", "~", "^", "€" -> {
+                if (key in setOf("?", "!", ";")) learnBeforeDelimiter(ic)
                 ic.commitText(key, 1)
+            }
 
             in "0".."9" -> ic.commitText(key, 1)
             else -> if (key.length == 1) ic.commitText(key, 1)
