@@ -600,7 +600,7 @@ class ControlKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(100, 0)?.toString().orEmpty()
         val boundary = before.isEmpty() || before.last().isWhitespace() || before.last() in "،؛؟,.!"
-        val current = if (boundary) "" else before.split(Regex("[\\s،؛؟,.!]+")).lastOrNull().orEmpty()
+        val current = if (boundary) "" else before.split(suggestionTokenSplit).lastOrNull().orEmpty()
         val completedContext = if (current.isEmpty()) before + word
             else before.dropLast(current.length) + word
         if (current.isNotEmpty()) ic.deleteSurroundingText(current.length, 0)
