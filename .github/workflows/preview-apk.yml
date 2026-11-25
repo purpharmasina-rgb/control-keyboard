@@ -1,6 +1,7 @@
 name: Build Samsung Arabic Preview APK
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feature/samsung-arabic-layout
